@@ -271,7 +271,7 @@ nv::vec4f Fbo::debugPixel(int id, int x,int y,int scale)
 	glBindTexture(GL_TEXTURE_2D, 0);
 	delete pTexture;
 	printf("r,g,b,a (%f,%f,%f,%f)\n",r,g,b,a);
-	return nv::vec4f(r, g, b, a);
+    return nv::vec4f(r, g, b, a);
 }
 void Fbo::SaveBMP(const char *filename, int id)
 {

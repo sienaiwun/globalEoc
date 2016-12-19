@@ -10,6 +10,9 @@ void EocVolumnShader::init()
 	m_pEdgeSlot = m_loader.getUniform("edgeTex");
 	m_reselutionSlot = m_loader.getUniform("resolution");
 	m_eocCamSlot = m_loader.getUniform("eocCameraPos");
+	m_isVertical_slot = m_loader.getUniform("isVertical");
+	m_asso_tex_slot = m_loader.getUniform("asso_occlude_tex");
+	
 }
 
 void EocVolumnShader::setScene(Scene * pScene)
@@ -48,11 +51,14 @@ void EocVolumnShader::setPara()
 	CHECK_ERRORS();
 	glUniform2f(m_reselutionSlot, m_resolution.x, m_resolution.y);
 	glUniform3f(m_eocCamSlot, m_eocCameraPos.x, m_eocCameraPos.y, m_eocCameraPos.z);
+	glUniform1i(m_isVertical_slot, m_isVertical);
 	CHECK_ERRORS();
+	setShaderTex(m_asso_tex_slot,m_asso_tex);
 	setShaderTex(m_posTexSlot, m_pGbuffer->getTexture(1)); 
 	CHECK_ERRORS();
-	setShaderTex(m_pEdgeSlot, m_pEdgeFbo->getTexture(0));
-
+	if (!m_isVertical)
+		setShaderTex(m_pEdgeSlot, m_pEdgeFbo->getTexture(0));
+	else
+		setShaderTex(m_pEdgeSlot, m_pEdgeFbo->getTexture(1));
 	resetTexId();
-
 }

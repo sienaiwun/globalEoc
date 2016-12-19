@@ -8,6 +8,8 @@ uniform vec3 cameraPos;
 uniform sampler2D edgeTex;
 uniform sampler2D posTex;
 uniform vec2 resolution;
+uniform sampler2D asso_occlude_tex;
+uniform int isVertical;
 
 
 bool isVerticalEdge(vec2 tc, vec3 worldPos)
@@ -80,12 +82,13 @@ void main()
 	FragColor0.xy = inToNdcPos(texture2D(edgeTex,bot).yzw)*1024.0;
 	FragColor0.zw = bot*1024;
 	return;
-	*/
 	
+	FragColor0.xyz = pWorldPos.xyz;
+	return;*/
 	vec3 gBufferPos = texture2D(posTex,ndc).xyz;
 	if(length(gBufferPos-cameraPos)>length(pWorldPos-cameraPos))
 	{
-		discard;
+	discard	;
 	}
 	if(pWorldPos.x < -26.5745)
 	{
@@ -93,6 +96,15 @@ void main()
 	}
 	float ka = 0.2;
 	FragColor0.xyz = vec3(1,1,1);
+	if(bool(isVertical))
+	{
+	 if(texture2D(asso_occlude_tex,ndc).x>0.5)
+	 {
+			discard;
+	 }
+	//FragColor0.xyz = vec3(1,1,0);
+	
+	}
 	return;
 	
 	/*

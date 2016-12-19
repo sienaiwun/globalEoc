@@ -42,28 +42,39 @@ public:
 	{
 		m_eocCameraPos = pos;
 	}
+	inline void setIsVertival(bool v)
+	{
+		m_isVertical = v;
+	}
+	inline void setAssoTex(GLuint tex)
+	{
+		m_asso_tex = tex;
+	}
 private:
 
 	GLuint m_vmpBinding;
 	GLuint m_modelViewBinding;
 	float* m_mvp;
 	float* m_modelView;
-	GLuint m_posTexSlot,m_pEdgeSlot;
+	GLuint m_posTexSlot, m_pEdgeSlot;
 	GLuint m_objectDiffuseBinding;
 	GLuint m_cameraPosBinding;
 	GLuint m_reselutionSlot;
 	GLuint m_hasTex;
 	GLuint m_objectId;
 	GLuint m_reflectFactor;
-	GLuint m_eocCamSlot;
+	GLuint m_eocCamSlot,m_isVertical_slot;
+	GLuint m_asso_tex_slot, m_asso_tex;
 	Fbo * m_pGbuffer;
 	Camera * m_pCamera;
 	Fbo * m_pEdgeFbo;
+	float m_is_vertical;
 	nv::vec3f m_diffuseColor;
 	nv::vec2f c;
 	nv::vec3f m_cameraPos;
 	nv::vec2f m_resolution;
 	nv::vec3f m_eocCameraPos;
+	bool m_isVertical;
 
 
 };

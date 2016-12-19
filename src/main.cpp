@@ -47,10 +47,16 @@ void key(unsigned char k, int x, int y)
 		pEoc->debugSwap();
 		break;
 	case '=':
-		pEoc->getEocCamera()->addToOrigin(0.2);
+		pEoc->getRightEocCamera()->addToOrigin(0.2);
 		break;
 	case '-':
-		pEoc->getEocCamera()->addToOrigin(-0.2);
+		pEoc->getRightEocCamera()->addToOrigin(-0.2);
+		break;
+	case '9':
+		pEoc->getTopEocCamera()->addToOrigin(0.2);
+		break;
+	case '0':
+		pEoc->getTopEocCamera()->addToOrigin(-0.2);
 		break;
 	}
 	glutPostRedisplay();
@@ -121,11 +127,17 @@ void Display()
 	pEoc->render(texManager);
 
 	//drawTex(pEoc->getCudaTex(), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.65, 1.0));
-	drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.65, 1.0));
+	//drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0-0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));
+//	drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0 - 0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));//
+	drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 0), nv::vec2f(0.75, 0.75));//
+
+	drawTex(pEoc->getRightEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.00), nv::vec2f(1, 0.25));
+	drawTex(pEoc->getTopEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.25), nv::vec2f(1, 0.5));
+	//drawTex(pEoc->getTopOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.50), nv::vec2f(1, 0.75));
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
-	drawTex(pEoc->getOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.00), nv::vec2f(1, 0.25));
-	drawTex(pEoc->getEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.25), nv::vec2f(1, 0.50));
-	
+
+	//drawTex(pEoc->getRenderFbo()->getTexture(0), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.75, 0.50));
+
 	if (drawFps ) {
 		static char fps_text[32];
 		float fps = g_time.getFps();

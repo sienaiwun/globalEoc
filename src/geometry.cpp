@@ -519,8 +519,23 @@ GLuint myGeometry::initImageMesh(int w, int h)
 	{
 		GLuint newIndex = glGenLists(1);;
 		glNewList(newIndex, GL_COMPILE);
+		
+		/*
+			glBegin(GL_TRIANGLE_STRIP);
+		   nv::vec3f point1 = 	nv::vec3f(-10.0046988,-13.1721592	,-43.1556740);
+		   nv::vec3f point2 = 	nv::vec3f(	-9.55374241,-13.2565308,-43.3332710);
+		   nv::vec3f eocCameraPos = nv::vec3f(15.6550808,-12.9208326,-49.8526649 );
+		   const float farDis = 150;
+		   nv::vec3f tex1 = point1 + farDis* normalize(point1 - eocCameraPos);
+		    nv::vec3f tex2 = point2 + farDis* normalize(point2 - eocCameraPos);
+			glVertex3fv((float*)&tex1);
+			glVertex3fv((float*)&tex2);
+			glVertex3fv((float*)&point1);
+			glVertex3fv((float*)&point2);
+			*/
+			
 		glBegin(GL_POINTS);
-		//float x = 659.5, y = 675.5;
+		//float x = 440.5, y = 718.5;
 		for (float x = 0.5; x < w; x++)
 		{
 			for (float y = 0.5; y < h; y++)

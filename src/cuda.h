@@ -25,6 +25,7 @@ public:
 enum cudaTexType
 {
 	occluderbuffer_t,
+	occluderTopbuffer_t,
 	edgebuffer_t,
 	color_t,
 	pos_t,
@@ -101,6 +102,7 @@ enum cudaPboType
 	test_t,
 	diff_normal_t,
 	list_e,
+	top_float4_t,
 #ifdef NOISEMAP
 	refract_t,
 
@@ -122,9 +124,11 @@ public:
 	void init();
 	void map();
 	void unMap();
+
+	void refresh();
 	inline GLuint getTexture()
 	{
-		assert(float4_t == m_type);
+		assert(float4_t == m_type||top_float4_t == m_type);
 		return m_texture;
 	}
 	inline cudaGraphicsResource ** getResPoint()
@@ -152,7 +156,9 @@ private:
 class Camera;
 extern "C" void cudaRelateTex(CudaTexResourse * pResouce);
 extern "C" void cudaRelateArray(CudaPboResource * pResouce);
-extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEoc);
+extern "C" void pboRefresh(CudaPboResource * pResource);
+extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEoc, Camera * pEocTopCamera);
 extern void cudaInit(int height,int width, int k,int rowLarger);
+
 
 #endif

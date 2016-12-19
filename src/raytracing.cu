@@ -35,7 +35,8 @@ rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 rtDeclareVariable(float3, light_pos, , );
 rtDeclareVariable(rtObject, reflectors, , );
 rtDeclareVariable(float3, eye_pos, , );
-rtDeclareVariable(float3, eoc_eye_pos, , );
+rtDeclareVariable(float3, eoc_eye_right_pos, , );
+rtDeclareVariable(float3, eoc_eye_top_pos, , );
 rtDeclareVariable(optix::Matrix4x4, optixModeView_Inv, , );
 rtDeclareVariable(float2, resolution, , );
 struct PerRayData_shadow
@@ -64,22 +65,36 @@ RT_PROGRAM void shadow_request()
 	if (textValue.x >= 1.0)
 	{
 		float3 targetPos = make_float3(textValue.y, textValue.z, textValue.w);
-		float3 ray_origin = eoc_eye_pos;
+		float3 ray_origin = eoc_eye_right_pos;
 		PerRayData_shadow prd;
 		prd.attenuation = make_float3(-1);
 		float3 L = targetPos - ray_origin;
 		float dist = sqrtf(dot(L, L));
 		float3 ray_direction = L / dist;
-		optix::Ray ray = optix::make_Ray(ray_origin, ray_direction, shadow_ray_type, scene_epsilon, textValue.x);
+		optix::Ray ray = optix::make_Ray(ray_origin, ray_direction, shadow_ray_type, dist, textValue.x);
 		rtTrace(reflectors, ray, prd);
 		result_buffer[launch_index] = make_float4(prd.attenuation,1);
-		result_buffer[launch_index].z = 1;
+		result_buffer[launch_index].z =( result_buffer[launch_index].z +3 )/4;
 		return;
 	}
+	else  	if (textValue.x <= -1.0)
+	{
+		float3 targetPos = make_float3(textValue.y, textValue.z, textValue.w);
+		float3 ray_origin = eoc_eye_top_pos;
+		PerRayData_shadow prd;
+		prd.attenuation = make_float3(-1);
+		float3 L = targetPos - ray_origin;
+		float dist = sqrtf(dot(L, L));
+		float3 ray_direction = L / dist;
+		optix::Ray ray = optix::make_Ray(ray_origin, ray_direction, shadow_ray_type, dist, -textValue.x);
+		rtTrace(reflectors, ray, prd);
+		result_buffer[launch_index] = make_float4(prd.attenuation, 1);
+		result_buffer[launch_index].y = (result_buffer[launch_index].y + 3) / 4;
+		return;
+	}
+
 	result_buffer[launch_index] = textValue;
 }
-
-
 
 RT_PROGRAM void exception()
 {

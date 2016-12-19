@@ -32,6 +32,7 @@ public:
 	{
 		pOriginCam = pCamera;
 		m_eocRightCam.setOriginCamera(pCamera);
+		m_eocTopCam.setOriginCamera(pCamera);
 	}
 	void render(textureManager & manager);
 	inline void setScene(Scene *pScene)
@@ -54,25 +55,42 @@ public:
 	{
 		m_debugSwap = !m_debugSwap;
 	}
-	inline Fbo* getOccludeFbo()
+	inline Fbo* getRightOccludeFbo()
 	{
-		return &m_occludedBuffer;
+		return &m_occludedRightBuffer;
 	}
-	inline Fbo* getEocBuffer()
+	inline Fbo* getTopOccludeFbo()
 	{
-		return &m_gbufferEocFbo;
+		return &m_occludedTopBuffer;
+	}
+	inline Fbo* getRightEocBuffer()
+	{
+		return &m_gbufferRightEocFbo;
+	}
+	inline Fbo* getTopEocBuffer()
+	{
+		return &m_gbufferTopEocFbo;
 	}
 	inline GLuint getCudaTex()
 	{
 		return pCounter->getTex();
 	}
-	inline EocCamera* getEocCamera()
+	inline GLuint getCudaTopTex()
+	{
+		return pCounter->getTopTex();
+	}
+	inline EocCamera* getRightEocCamera()
 	{
 		return &m_eocRightCam;
+	}
+	inline EocCamera* getTopEocCamera()
+	{
+		return &m_eocTopCam;
 	}
 private:
 	bool m_debugSwap;
 	EocCamera m_eocRightCam;
+	EocCamera m_eocTopCam;
 	Camera * pOriginCam;
 	NewEdgeShader m_edgeShader;
 	GbufferShader m_gbufferShader;
@@ -88,8 +106,10 @@ private:
 	Fbo m_edgeFbo;
 	Fbo m_progFbo;
 	Fbo m_gbufferFbo;
-	Fbo m_gbufferEocFbo;
-	Fbo m_occludedBuffer;
+	Fbo m_gbufferRightEocFbo;
+	Fbo m_gbufferTopEocFbo;
+	Fbo m_occludedRightBuffer;
+	Fbo m_occludedTopBuffer;
 	Fbo debugFbo;
 
 	RowCounter * pCounter;

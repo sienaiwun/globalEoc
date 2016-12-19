@@ -13,14 +13,11 @@ void EocCamera::Look()
 	case is_Top:
 		vecD = m_pOriginCamera->getUpND();
 		break;
-
 	default:
 		break;
 	}
 	nv::vec3f newOrigin = m_pOriginCamera->getCameraPos() + m_toOriginDis*vecD;
-	nv::vec3f newFocus = m_pOriginCamera->getCameraPos() + m_toFucusDis*m_pOriginCamera->getDeepND();
+	nv::vec3f newFocus = newOrigin + m_toFucusDis*m_pOriginCamera->getDeepND();
 	m_eocCamera.setPos(newOrigin, newFocus);
 	m_eocCamera.Look();
-
-
 }
