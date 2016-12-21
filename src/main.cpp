@@ -13,8 +13,10 @@
 #include "globalEoc.h".
 #include "box.h"
 #include "showShader.h"
+#include "Constructor.h"
 Timer g_time;
-Camera g_Camera;
+static Camera g_Camera;
+static Camera g_navi_Cam;
 GbufferShader g_bufferShader;
 ShowShader g_showShader;
 Scene* g_scene;
@@ -22,7 +24,8 @@ EOCrender * pEoc;
 textureManager texManager("");
 bool drawFps = true;
 OITrender *g_render;
-
+bool _isNaviCam = false;
+static Constructor g_Consturctor;
 
 void drawTex(GLuint mapId, bool addition = false, nv::vec2f beginPoint = nv::vec2f(0, 0), nv::vec2f endPoint = nv::vec2f(1, 1))
 {
@@ -57,6 +60,9 @@ void key(unsigned char k, int x, int y)
 		break;
 	case '0':
 		pEoc->getTopEocCamera()->addToOrigin(-0.2);
+		break;
+	case '	'://tab
+		_isNaviCam = !_isNaviCam;
 		break;
 	}
 	glutPostRedisplay();
@@ -103,6 +109,7 @@ void Init()
 	
 	g_scene = new boxScene();
 	g_scene->LoadCamera(&g_Camera);
+	g_navi_Cam = g_Camera;
 
 	g_showShader.init();
 	g_bufferShader.init();
@@ -112,6 +119,11 @@ void Init()
 #ifdef OPTIX
 	pEoc->initOptix();
 #endif
+	g_Consturctor = Constructor(1024, 1024);
+	g_Consturctor.setNaveCam(&g_navi_Cam);
+	g_Consturctor.setScene(g_scene);
+	g_Consturctor.init();
+
 }
 
 
@@ -121,11 +133,17 @@ void Display()
 {
 	CHECK_ERRORS();
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	g_Camera.cameraControl();
-	//g_scene->render(g_bufferShader, texManager, &g_Camera);            // diffuse rendering
+	if (!_isNaviCam)
+	{
+		g_Camera.cameraControl();
+	}
+	else
+	{
+		g_navi_Cam.cameraControl();
+	}
 	
 	pEoc->render(texManager);
-
+	g_Consturctor.construct();
 	//drawTex(pEoc->getCudaTex(), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.65, 1.0));
 	//drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0-0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));
 //	drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0 - 0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));//
@@ -135,7 +153,7 @@ void Display()
 	drawTex(pEoc->getTopEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.25), nv::vec2f(1, 0.5));
 	//drawTex(pEoc->getTopOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.50), nv::vec2f(1, 0.75));
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
-
+	drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
 	//drawTex(pEoc->getRenderFbo()->getTexture(0), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.75, 0.50));
 
 	if (drawFps ) {
@@ -149,13 +167,21 @@ void Display()
 }
 void idle()
 {
-	g_Camera.Update();
+	if (!_isNaviCam)
+	{
+		g_Camera.Update();
+	}
+	else
+	{
+		g_navi_Cam.Update();
+	}
 	glutPostRedisplay();
+	
+	
 }
 
 int main(int argc, char** argv)
 {
-	freopen("stdout.txt", "w", stdout);
 	freopen("stderr.txt", "w", stderr);
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_MULTISAMPLE);

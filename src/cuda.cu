@@ -8,9 +8,7 @@ texture<float4, 2, cudaReadModeElementType> cudaOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaTopOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaColorTex;
 texture<float4, 2, cudaReadModeElementType> cudaPosTex;
-
 cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
-
 typedef enum {
 	isVolumn,
 	notVolumn,
@@ -23,7 +21,7 @@ __device__ uint3* d_cudaPboBuffer;
 float4 *cuda_TexturePbo_buffer, *cuda_top_TexturePbo_buffer;
 __device__ float4* d_cudaTexture;
 __device__ float4* d_cudaTopTexture;
-__device__ int imageWidth, imageHeight, d_outTextureWidth, d_outTextureHeigh, d_outTopTextureWidth, d_outTopTextureHeight;
+__device__ int imageWidth, imageHeight, d_outTextureWidth, d_outTextureHeigh, d_outTopTextureWidth, d_outTopTextureHeight,d_construct_width,d_construct_height;
 __device__ int d_index;
 __device__ ListNote* d_listBuffer;
 __device__ ListNote* d_listBuffer_top;
@@ -33,6 +31,35 @@ __device__ float3 d_eocPos;
 __device__ float3 d_eocTopPos;
 float* modelView;
 __device__ float* d_modelView;
+
+
+float* modelView_construct;
+float* project_construct;
+float* modelView_inv;
+__device__ float* d_modelView_construct;
+__device__ float* d_project_construct;
+__device__ float3 d_construct_cam_pos;
+__device__ float* d_modeView_inv_construct;
+__device__ float2 d_bbmin, d_bbmax;
+
+
+__device__ float4* d_cuda_construct_texture;
+float4 *cuda_construct_texturePbo_buffer;
+
+__device__ float4 MutiMatrix(float * Matrix, float4 invalue)
+{
+	float x = invalue.x;
+	float y = invalue.y;
+	float z = invalue.z;
+	float w = invalue.w;
+
+	float outx = x*Matrix[0] + y*Matrix[4] + z*Matrix[8] + w*Matrix[12];
+	float outy = x*Matrix[1] + y*Matrix[5] + z*Matrix[9] + w*Matrix[13];
+	float outz = x*Matrix[2] + y*Matrix[6] + z*Matrix[10] + w*Matrix[14];
+	float outw = x*Matrix[3] + y*Matrix[7] + z*Matrix[11] + w*Matrix[15];
+
+	return make_float4(outx, outy, outz, outw);
+}
 
 __device__ void MutiMatrix(float * Matrix, float x, float y, float z, float &outx, float &outy, float &outz)
 {
@@ -450,6 +477,8 @@ extern void cudaInit(int height, int width, int k, int rowLarger)
 	//memset(host_data, 0, height*k*sizeof(ListNote));
 	//checkCudaErrors(cudaMemcpy((void *)device_data, (void *)host_data, height * k * sizeof(ListNote), cudaMemcpyDeviceToHost));
 
+	
+	
 
 }
 extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocCam, Camera * pEocTopCamera)
@@ -545,6 +574,7 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 	}
 
 }
+
 extern "C" void cudaRelateArray(CudaPboResource * pResource)
 {
 	size_t numBytes;
@@ -573,4 +603,67 @@ extern "C" void cudaRelateArray(CudaPboResource * pResource)
 		checkCudaErrors(cudaMemcpyToSymbol(d_cudaTopTexture, &cuda_top_TexturePbo_buffer, sizeof(float4*)));
 
 	}
+	else if (construct_t == pResource->getType())
+	{
+		checkCudaErrors(cudaMemcpyToSymbol(d_construct_width, &w, sizeof(int)));
+		checkCudaErrors(cudaMemcpyToSymbol(d_construct_height, &h, sizeof(int)));
+
+		checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&cuda_construct_texturePbo_buffer, &numBytes, *pCudaTex));
+		checkCudaErrors(cudaMemcpyToSymbol(d_cuda_construct_texture, &cuda_construct_texturePbo_buffer, sizeof(float4*)));
+	}
+}
+void mapConstruct(Camera * pReconstructCamer)
+{
+
+	checkCudaErrors(cudaMemcpyToSymbol(d_construct_cam_pos, &pReconstructCamer->getCameraPos(), 3 * sizeof(float)));
+	checkCudaErrors(cudaMemcpy(modelView_construct, pReconstructCamer->getModelViewMat(), 16 * sizeof(float), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpyToSymbol(d_modelView_construct, &modelView_construct, sizeof(float*)));
+	checkCudaErrors(cudaMemcpy(project_construct, pReconstructCamer->getModelViewMat(), 16 * sizeof(float), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpyToSymbol(d_project_construct, &project_construct, sizeof(float*)));
+	nv::matrix4f invModelView = inverse(nv::matrix4f(pReconstructCamer->getModelViewMat()));
+	checkCudaErrors(cudaMemcpy(modelView_inv, invModelView.get_value(), 16 * sizeof(float), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpyToSymbol(d_modeView_inv_construct, &modelView_inv, sizeof(float*)));
+
+	nv::vec2f bbmin = nv::vec2f(pReconstructCamer->getImageMin().x, pReconstructCamer->getImageMin().y);
+	nv::vec2f bbmax = nv::vec2f(pReconstructCamer->getImageMax().x, pReconstructCamer->getImageMax().y);
+	checkCudaErrors(cudaMemcpyToSymbol(d_bbmin, &bbmin, 2*sizeof(float)));
+	checkCudaErrors(cudaMemcpyToSymbol(d_bbmax, &bbmax, 2*sizeof(float)));
+
+}
+
+__device__ float3 getImagePos(float2 tc)
+{
+	float2 xy = d_bbmin + (d_bbmax - d_bbmin)*tc;
+	xy = xy;
+	float4 temp = MutiMatrix(d_modeView_inv_construct, make_float4(xy.x, xy.y, -1, 1));// *;
+
+	temp = temp / temp.w;
+	return make_float3(temp.x, temp.y, temp.z);
+}
+
+__global__ void construct_kernel(int kernelWidth, int kernelHeight)
+{
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+	int y = blockIdx.y*blockDim.y + threadIdx.y;
+
+	const int index = y*kernelWidth + x;
+	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
+	float3 beginPoint = getImagePos(tc);
+		
+	d_cuda_construct_texture[index] = make_float4(beginPoint, 1);//tex2D(cudaColorTex, x, y);
+
+}
+void construct_cudaInit()
+{
+	checkCudaErrors(cudaMalloc(&modelView_construct, 16 * sizeof(float)));
+	checkCudaErrors(cudaMalloc(&project_construct, 16 * sizeof(float)));
+	checkCudaErrors(cudaMalloc(&modelView_inv, 16 * sizeof(float)));
+		
+
+}
+void cuda_Construct(int width, int height)
+{
+	dim3 blockSize(16, 16, 1);
+	dim3 gridSize(width / blockSize.x, height / blockSize.y, 1);
+	construct_kernel << <gridSize, blockSize >> >(width, height);
 }

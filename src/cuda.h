@@ -100,6 +100,7 @@ enum cudaPboType
 	float4_t,
 	float2_t,
 	test_t,
+	construct_t,
 	diff_normal_t,
 	list_e,
 	top_float4_t,
@@ -111,6 +112,10 @@ enum cudaPboType
 class CudaPboResource
 {
 public:
+	inline bool is_texture()
+	{
+		return m_type == float4_t || top_float4_t == m_type || construct_t == m_type;
+	}
 	inline void set(int w, int h, cudaPboType t)
 	{
 		m_width = w;
@@ -128,7 +133,7 @@ public:
 	void refresh();
 	inline GLuint getTexture()
 	{
-		assert(float4_t == m_type||top_float4_t == m_type);
+		assert(is_texture());
 		return m_texture;
 	}
 	inline cudaGraphicsResource ** getResPoint()
@@ -159,6 +164,6 @@ extern "C" void cudaRelateArray(CudaPboResource * pResouce);
 extern "C" void pboRefresh(CudaPboResource * pResource);
 extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEoc, Camera * pEocTopCamera);
 extern void cudaInit(int height,int width, int k,int rowLarger);
-
+ 
 
 #endif

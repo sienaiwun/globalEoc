@@ -19,9 +19,11 @@ EOCrender::EOCrender()
 	m_eocRightCam = EocCamera(is_Right, dis_orgin, to_flocus);
 	m_eocTopCam = EocCamera(is_Top, dis_orgin, to_flocus);
 	m_debugSwap = false;
+	pOriginCam = new Camera();
 }
 EOCrender::EOCrender(int w, int h) :m_height(h), m_width(w), m_pScene(NULL)
 {
+	pOriginCam = new Camera();
 	m_renderFbo = Fbo(1, m_width, m_height);
 	m_renderFbo.init();
 

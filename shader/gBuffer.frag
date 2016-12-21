@@ -11,7 +11,7 @@ layout( location = 3 ) out vec4 FragColor3;
 
 uniform sampler2D objectTex;
 uniform vec3 objectDiffuseColor;
-uniform mat4 modelView; // Projection * ModelView
+uniform mat4 modelView; //  ModelView
 
 uniform vec3 cameraPos;
 uniform vec3 lightPos;
@@ -40,6 +40,8 @@ void main()
 	FragColor1.w = 1;
 	FragColor2 = vec4(N,1);
 	FragColor0.x = min(0.98,FragColor0.x);
+	vec4 temp = modelView * vec4(worldPos,1.0);
+	FragColor0.w= temp.z;
 	/*
 	vec4 test;
 	#define N 100000

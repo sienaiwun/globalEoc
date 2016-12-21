@@ -159,18 +159,13 @@ public:
 private:
 	// The camera's position
 	CVector3 m_vPosition;
-
 	// The camera's view
 	CVector3 m_vView;
-
 	// The camera's up vector
 	CVector3 m_vUpVector;
-
 	// The camera's strafe vector
 	CVector3 m_vStrafe;
-
 	nv::vec3f m_upD,m_rightD,m_deepD;
-
 	nv::matrix4f m_modelView;
 	nv::matrix4f m_mvpMat;
 	nv::matrix4f m_projMat;

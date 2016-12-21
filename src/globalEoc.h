@@ -87,11 +87,13 @@ public:
 	{
 		return &m_eocTopCam;
 	}
+	
 private:
 	bool m_debugSwap;
 	EocCamera m_eocRightCam;
 	EocCamera m_eocTopCam;
-	Camera * pOriginCam;
+	Camera * pOriginCam;  // todo 
+	Camera * pNaviCam;
 	NewEdgeShader m_edgeShader;
 	GbufferShader m_gbufferShader;
 	BlendShader m_blendShader;
