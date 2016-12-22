@@ -13,7 +13,7 @@ public:
 	Constructor() = default;
 	Constructor(int w, int h) :m_width(w), m_height(h)
 	{
-		m_construct_Fbo = Fbo(1, w, h);
+		m_construct_Fbo = Fbo(3, w, h);
 
 	}
 	void init();

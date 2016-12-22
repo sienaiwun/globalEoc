@@ -31,6 +31,8 @@ __device__ float3 d_eocPos;
 __device__ float3 d_eocTopPos;
 float* modelView;
 __device__ float* d_modelView;
+float* proj;
+__device__ float* d_porj;
 
 
 float* modelView_construct;
@@ -46,7 +48,7 @@ __device__ float2 d_bbmin, d_bbmax;
 __device__ float4* d_cuda_construct_texture;
 float4 *cuda_construct_texturePbo_buffer;
 
-__device__ float4 MutiMatrix(float * Matrix, float4 invalue)
+__host__ __device__ float4 MutiMatrix(float * Matrix, float4 invalue)
 {
 	float x = invalue.x;
 	float y = invalue.y;
@@ -60,8 +62,33 @@ __device__ float4 MutiMatrix(float * Matrix, float4 invalue)
 
 	return make_float4(outx, outy, outz, outw);
 }
+__host__ __device__ float  element(float* _array,int row, int col) 
+{
+	return _array[row | (col << 2)];
+}
+__host__ __device__ float4 MutiMatrixN(float * Matrix, float4 invalue)
+{
+	float x = invalue.x;
+	float y = invalue.y;
+	float z = invalue.z;
+	float w = invalue.w;
+	float r[4];
+	for (int i = 0; i < 4; i++)
+	{
+		r[i] = (x * element(Matrix, i, 0) + y * element(Matrix, i, 1) + z * element(Matrix, i, 2) + w * element(Matrix, i, 3));
+	}
+	return make_float4(r[0], r[1], r[2], r[3]);
+}
+__host__ __device__ void MutiMatrix(float* src, float* matrix, float* r)
+{
+		for (int i = 0; i < 4; i++)
+		{			
+			r[i] = (src[0] * element(matrix, i, 0) + src[1] * element(matrix,i, 1) + src[2] * element(matrix, i, 2) + src[3] * element(matrix, i, 3));
+		}
 
-__device__ void MutiMatrix(float * Matrix, float x, float y, float z, float &outx, float &outy, float &outz)
+}
+
+__host__ __device__ void MutiMatrix(float * Matrix, float x, float y, float z, float &outx, float &outy, float &outz)
 {
 	float tempx = x*Matrix[0] + y*Matrix[1] + z*Matrix[2] + Matrix[3];
 	float tempy = x*Matrix[4] + y*Matrix[5] + z*Matrix[6] + Matrix[7];
@@ -472,6 +499,8 @@ extern void cudaInit(int height, int width, int k, int rowLarger)
 	checkCudaErrors(cudaMallocHost(&host_data, height*k*sizeof(ListNote)));
 #endif
 	checkCudaErrors(cudaMalloc(&modelView, 16 * sizeof(float)));
+	checkCudaErrors(cudaMalloc(&proj, 16 * sizeof(float)));
+	
 
 	//host_data = (ListNote*)malloc(height*k*sizeof(ListNote));
 	//memset(host_data, 0, height*k*sizeof(ListNote));
@@ -492,6 +521,10 @@ extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocC
 
 	checkCudaErrors(cudaMemcpy(modelView, pCamera->getModelViewMat(), 16 * sizeof(float), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpyToSymbol(d_modelView, &modelView, sizeof(float*)));
+	checkCudaErrors(cudaMemcpy(proj, pCamera->getProjection(), 16 * sizeof(float), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpyToSymbol(d_porj, &proj, sizeof(float*)));
+
+
 	cudaEvent_t begin_t, end_t;
 	checkCudaErrors(cudaEventCreate(&begin_t));
 	checkCudaErrors(cudaEventCreate(&end_t));
@@ -618,7 +651,7 @@ void mapConstruct(Camera * pReconstructCamer)
 	checkCudaErrors(cudaMemcpyToSymbol(d_construct_cam_pos, &pReconstructCamer->getCameraPos(), 3 * sizeof(float)));
 	checkCudaErrors(cudaMemcpy(modelView_construct, pReconstructCamer->getModelViewMat(), 16 * sizeof(float), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpyToSymbol(d_modelView_construct, &modelView_construct, sizeof(float*)));
-	checkCudaErrors(cudaMemcpy(project_construct, pReconstructCamer->getModelViewMat(), 16 * sizeof(float), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpy(project_construct, pReconstructCamer->getProjection(), 16 * sizeof(float), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpyToSymbol(d_project_construct, &project_construct, sizeof(float*)));
 	nv::matrix4f invModelView = inverse(nv::matrix4f(pReconstructCamer->getModelViewMat()));
 	checkCudaErrors(cudaMemcpy(modelView_inv, invModelView.get_value(), 16 * sizeof(float), cudaMemcpyHostToDevice));
@@ -628,30 +661,181 @@ void mapConstruct(Camera * pReconstructCamer)
 	nv::vec2f bbmax = nv::vec2f(pReconstructCamer->getImageMax().x, pReconstructCamer->getImageMax().y);
 	checkCudaErrors(cudaMemcpyToSymbol(d_bbmin, &bbmin, 2*sizeof(float)));
 	checkCudaErrors(cudaMemcpyToSymbol(d_bbmax, &bbmax, 2*sizeof(float)));
+	nv::vec2f tc = nv::vec2f(412, 512) / nv::vec2f(1024.0, 1024.0);
+	nv::vec2f xy = bbmin + (bbmax - bbmin)*tc;
+	nv::vec4f temp;
+	MutiMatrix((float*)nv::vec4f(xy,-1,1), (float*)invModelView.get_value(), (float*)& temp);// *;
+	//MutiMatrix((float*)&modelViewValue, (float*)invModelView.get_value(), (float*)& temp);// *;
 
+	// nv::vec4f fuck = invModelView * nv::vec4f(modelViewValue);
+	//nv::vec4f beginPoint = nv::vec4f(15.402321, -17.913536, -52.650398,1);
+
+	//beginPoint = nv::vec4f(-4.31230021, -17.7475834, -47.2878876, 1);
+	//beginPoint = nv::vec4f( nv::vec3f(temp), 1);
+	nv::vec4f temp1 = nv::matrix4f(pReconstructCamer->getModelViewMat())* temp;
+	
+	nv::vec4f final = nv::matrix4f(pReconstructCamer->getProjection())* temp1;
+	final /= final.w;
+	final.x = final.x*0.5 + 0.5;
+	final.y = final.y*0.5 + 0.5;
+	final.x *= 1024;
+	final.y *= 1024;
+
+	
 }
 
 __device__ float3 getImagePos(float2 tc)
 {
 	float2 xy = d_bbmin + (d_bbmax - d_bbmin)*tc;
 	xy = xy;
-	float4 temp = MutiMatrix(d_modeView_inv_construct, make_float4(xy.x, xy.y, -1, 1));// *;
-
+	float4 temp = MutiMatrixN(d_modeView_inv_construct, make_float4(xy.x, xy.y, -1, 1));
 	temp = temp / temp.w;
 	return make_float3(temp.x, temp.y, temp.z);
+}
+__device__ float3 toFloat3(float4 inValue)
+{
+	return make_float3(inValue.x / inValue.w, inValue.y / inValue.w, inValue.z / inValue.w);
+}
+__device__ bool isTracingEdge(float2 uv)
+{
+	return abs(tex2D(cudaProgTex, uv.x, uv.y).x) > 0.05 || abs(tex2D(cudaProgTex, uv.x, uv.y).y) > 0.05;
+}
+ __device__ int intersectTexRay(float3 posW, float3 directionW,	float4& oc)
+{
+
+	float2 d_mapScale = 1.0/make_float2(d_construct_width, d_construct_height);
+	float3 rayStart, rayEnd;
+	float4 color;
+	printf("posW:(%f,%f,%f,1)\n", posW.x, posW.y, posW.z);
+	float4 posWE = MutiMatrixN(d_modelView,make_float4(posW, 1));
+	float4 temp2 = MutiMatrixN(d_porj, posWE);
+	temp2 = temp2 / temp2.w;
+	printf("temp2:%f,%f", temp2.x, temp2.y);
+	float3 posW3 = toFloat3(posWE);
+	float4 temp = MutiMatrixN(d_modelView_construct, make_float4(directionW, 0));
+	float3 RE = normalize(make_float3(temp.x, temp.y, temp.z));
+
+	float epison = 1.3;
+	rayStart = posW3 + RE*epison;
+
+	float max_rfl = 370;//far*diffuseColor.w;
+	rayEnd = posW3 + RE*max_rfl;
+
+	//p.color0.xy = tc;
+	if (rayEnd.z>0)
+	{
+		float step = -posW3.z / RE.z;
+		rayEnd = posW3 + RE*(step - 1);
+	}
+
+	temp;
+	temp = MutiMatrixN(d_porj, make_float4(rayStart, 1));
+
+	float3 projStart = toFloat3(temp);
+	temp = MutiMatrixN(d_porj, make_float4(rayEnd, 1));
+	float3 projEnd = toFloat3(temp);
+
+	projStart.x = 0.5*projStart.x + 0.5;
+	projEnd.x = 0.5*projEnd.x + 0.5;
+	projStart.y = 0.5*projStart.y + 0.5;
+	projEnd.y = 0.5*projEnd.y + 0.5;
+
+	printf("projStart(%f,%f),projEnd(%f,%f)\n", projStart.x, projStart.y, projEnd.x, projEnd.y);
+	rayStart.z = rayStart.z;
+
+	if (projStart.x>1 || projStart.x<0 || projStart.y<0 || projStart.y>1 || rayStart.z>0)
+	{
+		return 0;
+	}
+	//oc = make_float4(projStart.x,projStart.y,projStart.z,0.7);	
+	//return 1;
+	float alpha = 0;
+	float2 interval = make_float2(projEnd.x, projEnd.y) - make_float2(projStart.x, projStart.y);
+	int stepN;
+	if (abs(interval.x)>abs(interval.y))
+		stepN = abs(interval.x) / d_mapScale.x + 1;
+	else
+		stepN = abs(interval.y) / d_mapScale.y + 1;
+	float currSamplePointZ, currRayPointZ, n, prevSamplePointZ, prevRayPointZ;
+	float3 currSamplePoint, currRayPoint;
+	n = 0;
+	float2 tc = make_float2(projStart.x, projStart.y);
+	bool isNotValid = true;
+
+	if (tc.x>1 || tc.x<0 || tc.y<0 || tc.y>1)
+	{
+		return 0;
+	}
+	n = 0;
+	int count = 0;
+	bool formerCompare = false;
+	bool compare = false;
+	float2 formertc;
+
+	bool isBelowO = true;
+
+	while (tc.x >= 0 && tc.x <= 1 && tc.y >= 0 && tc.y <= 1 && n <= stepN)
+	{
+
+		alpha = n / stepN;
+		currRayPointZ = 1 / ((1 - alpha)*(1 / rayStart.z) + (alpha)*(1 / rayEnd.z));
+		currSamplePointZ = tex2D(cudaColorTex, tc.x, tc.y).w;
+
+		if ((currSamplePointZ<0) && (currRayPointZ <= currSamplePointZ))
+		{
+			if (!isBelowO)
+			{
+				tc = make_float2(projStart.x, projStart.y) + interval*(n) / stepN;
+
+				color = tex2D(cudaColorTex, tc.x, tc.y);
+				if (isTracingEdge(tc))
+				{
+					isBelowO = true;
+					continue;
+				}
+				if (color.y == 0.0)
+				{
+					isBelowO = true;
+					continue;
+				}
+				color.w = 1;
+				oc = color;
+				return 1;
+			}
+		}
+		else if (isBelowO)
+		{
+			isBelowO = false;
+		}
+		n += 1;
+		tc = make_float2(projStart.x, projStart.y) + interval* n / stepN;
+	}
+	return 0;
+
 }
 
 __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 {
 	int x = blockIdx.x*blockDim.x + threadIdx.x;
 	int y = blockIdx.y*blockDim.y + threadIdx.y;
-
+	if (x != 402 || y != 512)
+		return;
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
-	float3 beginPoint = getImagePos(tc);
-		
-	d_cuda_construct_texture[index] = make_float4(beginPoint, 1);//tex2D(cudaColorTex, x, y);
+	float3 beginPoint = getImagePos(tc) ;
+	printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
+	float3 viewDirection = getImagePos(tc) - d_construct_cam_pos;
 
+	printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
+	float4 outColor;
+	if (intersectTexRay(beginPoint,viewDirection,outColor))
+	{
+		d_cuda_construct_texture[index] = make_float4(beginPoint, 1);//tex2D(cudaColorTex, x, y);
+	}
+	else
+	{ 
+		d_cuda_construct_texture[index] = make_float4(1,1,1, 1);//tex2D(cudaColorTex, x, y);
+	}
 }
 void construct_cudaInit()
 {

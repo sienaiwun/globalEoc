@@ -123,7 +123,8 @@ void Init()
 	g_Consturctor.setNaveCam(&g_navi_Cam);
 	g_Consturctor.setScene(g_scene);
 	g_Consturctor.init();
-
+	g_Camera.cameraControl();
+	g_navi_Cam.cameraControl();
 }
 
 
@@ -143,6 +144,7 @@ void Display()
 	}
 	
 	pEoc->render(texManager);
+	//g_Consturctor.render(g_bufferShader, texManager);
 	g_Consturctor.construct();
 	//drawTex(pEoc->getCudaTex(), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.65, 1.0));
 	//drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0-0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));
@@ -153,7 +155,7 @@ void Display()
 	drawTex(pEoc->getTopEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.25), nv::vec2f(1, 0.5));
 	//drawTex(pEoc->getTopOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.50), nv::vec2f(1, 0.75));
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
-	drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
+	drawTex(g_Consturctor.getBuffer().getTexture(0), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
 	//drawTex(pEoc->getRenderFbo()->getTexture(0), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.75, 0.50));
 
 	if (drawFps ) {
