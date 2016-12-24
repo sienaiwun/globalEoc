@@ -13,6 +13,7 @@ void Constructor::render(glslShader & shader, textureManager& manager)
 	m_construct_Fbo.begin();
 	m_pScene->render(shader, manager, m_pNaviCam);   
 	//nv::vec4f point = m_construct_Fbo.debugPixel(1, 412, 512);
+	//m_construct_Fbo.SaveBMP("save.bmp",0);
 	m_construct_Fbo.end();
 }
 void Constructor::construct()

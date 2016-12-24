@@ -41,7 +41,14 @@ void key(unsigned char k, int x, int y)
 	switch (k)
 	{
 	case 'p':
-		g_Camera.printToFile(g_scene->getCameraFile());
+		if (_isNaviCam)
+		{
+			g_navi_Cam.printToFile(g_scene->getNaviCamerFile());
+		}
+		else
+		{
+			g_Camera.printToFile(g_scene->getCameraFile());
+		}
 		break;
 	case ' ':
 		g_Camera.moveTo(2,20);
@@ -109,7 +116,7 @@ void Init()
 	
 	g_scene = new boxScene();
 	g_scene->LoadCamera(&g_Camera);
-	g_navi_Cam = g_Camera;
+	g_scene->LoadNaviCam(&g_navi_Cam);
 
 	g_showShader.init();
 	g_bufferShader.init();
@@ -144,8 +151,7 @@ void Display()
 	}
 	
 	pEoc->render(texManager);
-	//g_Consturctor.render(g_bufferShader, texManager);
-	g_Consturctor.construct();
+	
 	//drawTex(pEoc->getCudaTex(), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.65, 1.0));
 	//drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0-0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));
 //	drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0 - 0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));//
@@ -155,7 +161,11 @@ void Display()
 	drawTex(pEoc->getTopEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.25), nv::vec2f(1, 0.5));
 	//drawTex(pEoc->getTopOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.50), nv::vec2f(1, 0.75));
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
-	drawTex(g_Consturctor.getBuffer().getTexture(0), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
+	g_Consturctor.construct();
+	drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
+	
+	g_Consturctor.render(g_bufferShader, texManager);
+	drawTex(g_Consturctor.getBuffer().getTexture(0), true, nv::vec2f(0.75, 0.5), nv::vec2f(1, 0.75));
 	//drawTex(pEoc->getRenderFbo()->getTexture(0), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.75, 0.50));
 
 	if (drawFps ) {
@@ -184,6 +194,8 @@ void idle()
 
 int main(int argc, char** argv)
 {
+	freopen("stdout.txt", "w", stdout);
+
 	freopen("stderr.txt", "w", stderr);
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH | GLUT_MULTISAMPLE);

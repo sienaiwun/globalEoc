@@ -112,7 +112,7 @@ void CudaPboResource::generateTex()
 	}
 	else if (is_texture())
 	{
-		
+
 
 		glPushAttrib(GL_PIXEL_MODE_BIT);
 		glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -123,10 +123,10 @@ void CudaPboResource::generateTex()
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 		glPopAttrib();
 
-
-
-#ifdef DEBUG
-
+		/*
+		
+		if(m_type == construct_t)
+		{
 		glEnable(GL_TEXTURE_2D);
 		BYTE *pTexture = NULL;
 		pTexture = new BYTE[m_width*m_height * 3];
@@ -141,8 +141,9 @@ void CudaPboResource::generateTex()
 
 		Fbo::SaveBMP("b.bmp", pTexture, m_width, m_height);
 
-		glBindTexture(GL_TEXTURE_2D, 0);//TexPosId   PboTex*/
-#endif
+		glBindTexture(GL_TEXTURE_2D, 0);
+		}*/
+		
 	}
 
 

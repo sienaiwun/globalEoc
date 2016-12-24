@@ -23,6 +23,7 @@ public:
 	Scene() :m_objNum(0)
 	{
 		m_cameraFile = std::string("");
+		m_naviFile = std::string("");
 	}
 	virtual void init();
 	virtual void render(glslShader & shader, textureManager& manager, Camera * pCamera);
@@ -41,9 +42,24 @@ public:
 			pCamera->loadToFIle(m_cameraFile.c_str());
 		}
 	}
+	void LoadNaviCam(Camera* pCamera)
+	{
+		if (m_naviFile.compare("") == 0)
+		{
+
+		}
+		else
+		{
+			pCamera->loadToFIle(m_naviFile.c_str());
+		}
+	}
 	std::string getCameraFile() const
 	{
 		return m_cameraFile;
+	}
+	std::string getNaviCamerFile() const
+	{
+		return m_naviFile;
 	}
 
 	
@@ -53,6 +69,7 @@ protected:
 	vector<string> m_fileName;
 	nv::vec3f m_lightPos;
 	std::string m_cameraFile;
+	std::string m_naviFile;
 #ifdef OPTIX
 public:
 	inline void setOptix(optix::Context * p)
