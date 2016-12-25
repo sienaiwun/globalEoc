@@ -123,12 +123,19 @@ public:
 	{
 		return m_optixTex;
 	}
+	inline GLuint getOptixWorldTex()
+	{
+		return m_optixWorldTex;
+	}
 private:
 	optix::Context        m_rtContext;
 	optix::Buffer         m_rtfinalBuffer;
+	optix::Buffer         m_rtWorldBuffer;
 	optix::TextureSampler m_rtTexture;
 	GLuint m_optixPbo;
 	GLuint m_optixTex;
+	GLuint m_optixWorldPbo;
+	GLuint m_optixWorldTex;
 
 #endif
 };

@@ -115,6 +115,22 @@ void EOCrender::initOptix()
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F_ARB, cudaTexWidth, cudaHeight, 0, GL_RGBA, GL_FLOAT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
+
+	
+	glGenBuffers(1, &m_optixWorldPbo);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_optixWorldPbo);
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, cudaTexWidth * cudaHeight * sizeof(float4), 0, GL_STREAM_READ);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+	glGenTextures(1, &m_optixWorldTex);
+	glBindTexture(GL_TEXTURE_2D, m_optixWorldTex);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F_ARB, cudaTexWidth, cudaHeight, 0, GL_RGBA, GL_FLOAT, NULL);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
 	const int optixWidth = cudaTexWidth, optixHeight = m_height;
 	try
 	{
@@ -144,6 +160,11 @@ void EOCrender::initOptix()
 		m_rtContext["result_buffer"]->setBuffer(m_rtfinalBuffer);
 
 		
+		m_rtWorldBuffer = m_rtContext->createBufferFromGLBO(RT_BUFFER_OUTPUT, m_optixWorldPbo);
+		m_rtWorldBuffer->setSize(cudaTexWidth, cudaHeight);
+		m_rtWorldBuffer->setFormat(RT_FORMAT_FLOAT4);
+		m_rtContext["position_buffer"]->setBuffer(m_rtWorldBuffer);
+
 		m_rtContext->setRayGenerationProgram(0, m_rtContext->createProgramFromPTXFile(RAYTRACINGPATH, "shadow_request"));
 		m_rtContext->setExceptionProgram(0, m_rtContext->createProgramFromPTXFile(RAYTRACINGPATH, "exception"));
 		
@@ -178,7 +199,7 @@ void EOCrender::optixTracing()
 
 		m_rtContext["bbmin"]->setFloat(pOriginCam->getImageMin().x, pOriginCam->getImageMin().y);
 		m_rtContext["bbmax"]->setFloat(pOriginCam->getImageMax().x, pOriginCam->getImageMax().y);
-
+		m_rtContext["optixModelView"]->setMatrix4x4fv(false, modelView.get_value());
 		m_rtContext->launch(0, cudaTexWidth, cudaTexHeight);
 	}
 	catch (optix::Exception& e) {
@@ -189,6 +210,16 @@ void EOCrender::optixTracing()
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_optixPbo);
 	glBindTexture(GL_TEXTURE_2D, m_optixTex);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cudaTexWidth, cudaTexHeight,
+		GL_RGBA, GL_FLOAT, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	glPopAttrib();
+
+	glPushAttrib(GL_PIXEL_MODE_BIT);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_optixWorldPbo);
+	glBindTexture(GL_TEXTURE_2D, m_optixWorldTex);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cudaTexWidth, cudaTexHeight,
 		GL_RGBA, GL_FLOAT, 0);
 	glBindTexture(GL_TEXTURE_2D, 0);

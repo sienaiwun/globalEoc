@@ -29,6 +29,8 @@ using namespace optix;
 rtTextureSampler<float4, 2>  request_texture;
 
 rtBuffer<float4, 2>          result_buffer;
+rtBuffer<float4, 2>          position_buffer;
+
 rtDeclareVariable(uint, shadow_ray_type, , );
 rtDeclareVariable(float, scene_epsilon, , );
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
@@ -39,6 +41,8 @@ rtDeclareVariable(float3, eoc_eye_right_pos, , );
 rtDeclareVariable(float3, eoc_eye_top_pos, , );
 rtDeclareVariable(optix::Matrix4x4, optixModeView_Inv, , );
 rtDeclareVariable(float2, resolution, , );
+
+rtDeclareVariable(optix::Matrix4x4, optixModelView, , );
 struct PerRayData_shadow
 {
 	float3 attenuation;
@@ -75,6 +79,11 @@ RT_PROGRAM void shadow_request()
 		rtTrace(reflectors, ray, prd);
 		result_buffer[launch_index] = make_float4(prd.attenuation,1);
 		result_buffer[launch_index].z =( result_buffer[launch_index].z +3 )/4;
+		float3 worldPos = ray_origin + ray_direction*prd.t_hit;
+		float4 temp = make_float4(worldPos, 1)*optixModelView;
+		temp = temp / temp.w;
+		result_buffer[launch_index].w = temp.z;
+		position_buffer[launch_index] = make_float4(worldPos,1);
 		return;
 	}
 	else  	if (textValue.x <= -1.0)
@@ -90,10 +99,15 @@ RT_PROGRAM void shadow_request()
 		rtTrace(reflectors, ray, prd);
 		result_buffer[launch_index] = make_float4(prd.attenuation, 1);
 		result_buffer[launch_index].y = (result_buffer[launch_index].y + 3) / 4;
+		float3 worldPos = ray_origin + ray_direction*prd.t_hit;
+		float4 temp = make_float4(worldPos, 1)*optixModelView;
+		temp = temp / temp.w;
+		result_buffer[launch_index].w = temp.z;
+		position_buffer[launch_index] = make_float4(worldPos, 1);
 		return;
 	}
-
 	result_buffer[launch_index] = textValue;
+	position_buffer[launch_index] = make_float4(0,0,0, 1);
 }
 
 RT_PROGRAM void exception()
