@@ -8,11 +8,13 @@ texture<float4, 2, cudaReadModeElementType> cudaOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaTopOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaColorTex;
 texture<float4, 2, cudaReadModeElementType> cudaPosTex;
+texture<float4, 2, cudaReadModeElementType> optixColorTex;
 cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
 typedef enum {
 	isVolumn,
 	notVolumn,
 }pixelEnum;
+
 
 
 uint3 *cuda_PBO_Buffer;
@@ -48,6 +50,8 @@ __device__ float2 d_bbmin, d_bbmax;
 __device__ float4* d_cuda_construct_texture;
 float4 *cuda_construct_texturePbo_buffer;
 
+__device__ float4* d_map_buffer;
+float4* cuda_map_buffer;
 __host__ __device__ float4 MutiMatrix(float * Matrix, float4 invalue)
 {
 	float x = invalue.x;
@@ -87,11 +91,34 @@ __host__ __device__ void MutiMatrix(float* src, float* matrix, float* r)
 		}
 
 }
+__device__ int2 nearestTc(float2 tc)
+{
+	return make_int2(tc.x, tc.y);//直接进行int转换，因为减去0.5+0.5
+}
 __device__ float4 colorTextreNorTc(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth,d_imageHeight);
-	//printf("tc:(%f,%f),z:(%f)\n", nonNorTc.x, nonNorTc.y, tex2D(cudaColorTex, nonNorTc.x, nonNorTc.y).z);
-	return tex2D(cudaColorTex, nonNorTc.x, nonNorTc.y);
+	int2 mapTx = nearestTc(nonNorTc);
+	int index = mapTx.y * d_imageWidth + mapTx.x;
+	int mappedX = (int)(d_map_buffer[index].x+0.5);
+
+	//printf("searched tc:(%d,%f),z:(%f)\n", mappedX, nonNorTc.y, tex2D(cudaColorTex, nonNorTc.x, nonNorTc.y).z);
+	return tex2D(optixColorTex, mappedX, nonNorTc.y);
+}
+__device__ bool canGetMappedPosition(float2 tc,float4* poc)
+{
+	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
+	int2 mapTx = nearestTc(nonNorTc);
+	int index = mapTx.y * d_imageWidth + mapTx.x;
+	int mappedY = (int)(d_map_buffer[index].y+ 0.5);
+	if (mappedY < 1)
+	{
+		return false;
+	}
+	//printf("mapped coord:(%d,%d)\n", mappedY, mapTx.y);
+	*poc = tex2D(optixColorTex, mappedY, nonNorTc.y);
+	return true;
+
 }
 __host__ __device__ void MutiMatrix(float * Matrix, float x, float y, float z, float &outx, float &outy, float &outz)
 {
@@ -397,7 +424,8 @@ __global__ void renderToTexutreTop(int kernelWidth, int kernelHeight)
 	FillSpanTop(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, index, toUv(index,texBegin ), toUv(index, d_imageWidth - 1));
 
 }
-__device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge)
+// 在第y 行的beginX 到endX直接记录中空的区域的位置信息leftEdge是用来评估左边边界，endUv是用来算左右两边的深度插值
+__device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge,int accumIndex )
 {
 	int top = min(endX, d_outTextureWidth);
 	//printf("volumn begin:%d,end:%d,top:%d\n",beginX,endX,top);
@@ -416,15 +444,19 @@ __device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge)
 	//	printf("(%f,%f,%f,%f)\n", d_modelView[4 * i + 0], d_modelView[4 * i + 1], d_modelView[4 * i + 2], d_modelView[4 * i + 3]);
 	for (int x = beginX; x < top; x++)
 	{
+		int lenght = (top - 1 - beginX);
 		float ratio = (x * 1.0f - beginX*1.0f) / (top - 1 - beginX);
 		float3 realPos = projective_interpo(beforePos, endPos, ratio);
 		int index = y*d_outTextureWidth + x;
 		float dis = distance(leftEdgePos, realPos, eoc_pos);
 		d_cudaTexture[index] = make_float4(dis, realPos.x, realPos.y, realPos.z);
+		int originMappos = y*d_imageWidth + accumIndex - lenght;
+		d_map_buffer[originMappos].y = x;
+		accumIndex++;
 	}
 }
-
-__device__ void FillSpan(int beginX, int endX, int y, float2 beginUv, float2 endUv)
+// 在第y 行的beginX 到endX 的这一块区域插入原来图像从beginUV到endUV的这一横条图像accumIndexX 记录原来图像到新图像的映射
+__device__ void FillSpan(int beginX, int endX, int y, float2 beginUv, float2 endUv,int* accumIndexX)
 {
 	int top = min(endX, d_outTextureWidth);
 	for (int x = beginX; x < top; x++)
@@ -432,6 +464,9 @@ __device__ void FillSpan(int beginX, int endX, int y, float2 beginUv, float2 end
 		int index = y*d_outTextureWidth + x;
 		float uvx = beginUv.x + (endUv.x - beginUv.x)*(x - beginX) / (top - beginX);
 		d_cudaTexture[index] = tex2D(cudaColorTex, uvx, beginUv.y);
+		int originMappos = y*d_imageWidth + *accumIndexX;
+		d_map_buffer[originMappos].x = x;
+		*accumIndexX += 1;
 	}
 }
 __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
@@ -457,6 +492,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	//printf("begin:%d,end%d,index:%d,length:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt,rowLength);
 	}*/
 	//printf("printf:%d\n", rowLength);
+	int accum_index = 0;  // 记录累计
 	float factor = d_imageWidth*1.0 / rowLength;
 	currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
 	int leftEdgeIndex = 0;
@@ -472,8 +508,8 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 		leftEdgeIndex = currentNote.leftEdge;
 		fillBegin = texBegin + acuumPixel;
 		fillEnd = texEnd + acuumPixel;
-		FillSpan(fillBegin*factor, fillEnd*factor, y, toUv(texBegin, y), toUv(texEnd, y));  //for 循环，左闭右开
-		FillVolumn((fillEnd)*factor, (fillEnd + span)*factor, y, texEnd, leftEdgeIndex);
+		FillSpan(fillBegin*factor, fillEnd*factor, y, toUv(texBegin, y), toUv(texEnd, y), &accum_index);  //for 循环，左闭右开
+		FillVolumn((fillEnd)*factor, (fillEnd + span)*factor, y, texEnd, leftEdgeIndex, accum_index);
 
 		acuumPixel += span;
 		texBegin = currentNote.endIndex;
@@ -482,7 +518,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	}
 	fillBegin = texBegin + acuumPixel;
 	//printf("final:(%d,%d) u(%f,%f)\n", fillBegin, d_imageWidth + span, toUv(texBegin, y).x, toUv(d_imageWidth - 1, y).x);
-	FillSpan(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, y, toUv(texBegin, y), toUv(d_imageWidth - 1, y));
+	FillSpan(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, y, toUv(texBegin, y), toUv(d_imageWidth - 1, y), &accum_index);
 
 
 }
@@ -506,6 +542,8 @@ extern void cudaInit(int height, int width, int k, int rowLarger)
 	checkCudaErrors(cudaMalloc(&modelView, 16 * sizeof(float)));
 	checkCudaErrors(cudaMalloc(&proj, 16 * sizeof(float)));
 	
+	checkCudaErrors(cudaMalloc(&cuda_map_buffer, width*height * sizeof(float4)));
+	checkCudaErrors(cudaMemcpyToSymbol(d_map_buffer, &cuda_map_buffer, sizeof(float*)));
 
 	//host_data = (ListNote*)malloc(height*k*sizeof(ListNote));
 	//memset(host_data, 0, height*k*sizeof(ListNote));
@@ -519,6 +557,7 @@ extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocC
 {
 	checkCudaErrors(cudaMemset(cuda_TexturePbo_buffer, 0, ROWLARGER*width*height*sizeof(float4)));
 	checkCudaErrors(cudaMemset(cuda_top_TexturePbo_buffer, 0, ROWLARGER*width*ROWLARGER*height*sizeof(float4)));
+	checkCudaErrors(cudaMemset(cuda_map_buffer, 0, width*height*sizeof(float4)));
 
 	checkCudaErrors(cudaMemcpyToSymbol(d_cameraPos, &pCamera->getCameraPos(), 3 * sizeof(float)));
 	checkCudaErrors(cudaMemcpyToSymbol(d_eocPos, &pEocCam->getCameraPos(), 3 * sizeof(float)));
@@ -582,8 +621,6 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 	checkCudaErrors(cudaGraphicsSubResourceGetMappedArray(&tmpcudaArray, *pCudaTex, 0, 0));
 	int w = pResouce->getWidth();
 	int h = pResouce->getHeight();
-	checkCudaErrors(cudaMemcpyToSymbol(d_imageWidth, &w, sizeof(int)));
-	checkCudaErrors(cudaMemcpyToSymbol(d_imageHeight, &h, sizeof(int)));
 	if (occluderbuffer_t == pResouce->getType())
 	{
 		checkCudaErrors(cudaBindTextureToArray(cudaOccuderTex, tmpcudaArray, channelDesc));
@@ -596,11 +633,16 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 	}
 	else if (color_t == pResouce->getType())
 	{
+	
+		checkCudaErrors(cudaMemcpyToSymbol(d_imageWidth, &w, sizeof(int)));
+		checkCudaErrors(cudaMemcpyToSymbol(d_imageHeight, &h, sizeof(int)));
 		checkCudaErrors(cudaBindTextureToArray(cudaColorTex, tmpcudaArray, channelDesc));
 		cudaColorTex.filterMode = cudaFilterModePoint;
 	}
 	else if (pos_t == pResouce->getType())
 	{
+		checkCudaErrors(cudaMemcpyToSymbol(d_imageWidth, &w, sizeof(int)));
+		checkCudaErrors(cudaMemcpyToSymbol(d_imageHeight, &h, sizeof(int)));
 		checkCudaErrors(cudaBindTextureToArray(cudaPosTex, tmpcudaArray, channelDesc));
 		cudaPosTex.filterMode = cudaFilterModePoint;
 
@@ -610,7 +652,11 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 		checkCudaErrors(cudaBindTextureToArray(cudaTopOccuderTex, tmpcudaArray, channelDesc));
 		cudaTopOccuderTex.filterMode = cudaFilterModePoint;
 	}
-
+	else if (optixColorTex_t == pResouce->getType())
+	{
+		checkCudaErrors(cudaBindTextureToArray(optixColorTex, tmpcudaArray, channelDesc));
+		optixColorTex.filterMode = cudaFilterModePoint;
+	}
 }
 
 extern "C" void cudaRelateArray(CudaPboResource * pResource)
@@ -678,7 +724,6 @@ void mapConstruct(Camera * pReconstructCamer)
 	//beginPoint = nv::vec4f(-4.31230021, -17.7475834, -47.2878876, 1);
 	//beginPoint = nv::vec4f( nv::vec3f(temp), 1);
 	nv::vec4f temp1 = nv::matrix4f(pReconstructCamer->getModelViewMat())* temp;
-	
 	nv::vec4f final = nv::matrix4f(pReconstructCamer->getProjection())* temp1;
 	final /= final.w;
 	final.x = final.x*0.5 + 0.5;
@@ -706,6 +751,7 @@ __device__ bool isTracingEdge(float2 tc)
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
 	return abs(tex2D(cudaProgTex, nonNorTc.x, nonNorTc.y).x) > 0.05 || abs(tex2D(cudaProgTex, nonNorTc.x, nonNorTc.y).y) > 0.05;
 }
+
  __device__ int intersectTexRay(float3 posW, float3 directionW,	float4& oc)
 {
 
@@ -806,10 +852,30 @@ __device__ bool isTracingEdge(float2 tc)
 				float2 lastTc = make_float2(projStart.x, projStart.y) + interval* lastAlpha;
 				if (isTracingEdge(lastTc))
 				{
-					oc = make_float4(1, 1, 0, 1);
-					return 1;
-					isBelowO = true;
-					continue;
+					int localN = n;
+					float4 localcolor;
+					bool getColor = canGetMappedPosition(tc, &localcolor);
+					while (getColor)
+					{
+						float localalpha = (float)localN / stepN;
+						float2 localTc = make_float2(projStart.x, projStart.y) + interval* localN / stepN;
+						getColor = canGetMappedPosition(localTc, &localcolor);
+						float localRayPointZ = 1 / ((1 - localalpha)*(1 / rayStart.z) + (localalpha)*(1 / rayEnd.z));
+						float localSamplePointZ = localcolor.w;
+						//printf("tc:(%f,%f),z:(%f,%f)\n", 1024 * localTc.x, 1024 * localTc.y, localRayPointZ, localSamplePointZ);
+						if ((localRayPointZ < 0) && (localRayPointZ <= localSamplePointZ))
+						{
+							//printf("found tc:(%f,%f),z:(%f,%f)\n", 1024 * localTc.x, 1024 * localTc.y, localRayPointZ, localSamplePointZ);
+							oc = localcolor;
+							return 1;
+						}
+					    localN ++;
+					   
+					};
+					/*
+					  进行隐藏区域的光线跟踪
+					*/
+					
 				}
 				color.w = 1;
 				oc = color;
@@ -831,8 +897,8 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
- 	//if (x != 270 || y != 260)
-	//	return;
+ //	if (x != 487 || y != 514)
+//		return;
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
 	float3 beginPoint = getImagePos(tc) ;

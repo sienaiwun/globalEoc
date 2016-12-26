@@ -35,12 +35,20 @@ public:
 	}
 	void render(glslShader & shader, textureManager& manager);
 	void construct();
+	inline void setOptixColorTex(int optixColorTex, int optixWidth, int optixHeight)
+	{
+		m_optixColorTex = optixColorTex;
+		m_optixWidth = optixWidth;
+		m_optixHeight = optixHeight;
+	}
 private:
 	Scene* m_pScene;
-	GLuint m_getTex;
-	int m_width, m_height;
+	GLuint m_getTex,m_optixColorTex;
+	int m_width, m_height,m_optixWidth,m_optixHeight;
 	Fbo m_construct_Fbo;
 	Camera * m_pNaviCam;
 	CudaPboResource * m_constuctResource;
+	CudaTexResourse * m_optixColorResource;
+
 };
 #endif

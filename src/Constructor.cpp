@@ -7,6 +7,13 @@ void Constructor::init()
 	m_constuctResource->init();
 	m_getTex = m_constuctResource->getTexture();
 	construct_cudaInit();
+
+
+	m_optixColorResource = new  CudaTexResourse();
+	m_optixColorResource->set(m_optixColorTex, m_optixWidth, m_optixHeight, optixColorTex_t);
+	m_optixColorResource->init();
+
+
 }
 void Constructor::render(glslShader & shader, textureManager& manager)
 {
@@ -20,9 +27,14 @@ void Constructor::construct()
 {
 	m_constuctResource->map();
 	mapConstruct(m_pNaviCam);
+	m_optixColorResource->map();
+
 	cuda_Construct(m_width,m_height);
+
+	m_optixColorResource->unmap();
 	m_constuctResource->unMap();
 	CHECK_ERRORS();
+
 	m_constuctResource->generateTex();
 	CHECK_ERRORS();
 }

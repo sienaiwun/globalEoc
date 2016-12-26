@@ -83,7 +83,8 @@ EOCrender::EOCrender(int w, int h) :m_height(h), m_width(w), m_pScene(NULL)
 
 	//m_pQuad = new QuadScene();
 	m_eocRightCam = EocCamera(is_Right, dis_orgin, to_flocus);
-	m_eocTopCam = EocCamera(is_Top, dis_orgin, to_flocus);
+	//m_eocTopCam = EocCamera(is_Top, dis_orgin, to_flocus);
+	m_eocTopCam = EocCamera(is_Top, 0, to_flocus);
 	m_debugSwap = false;
 
 	pCounter = new RowCounter(w, h);
@@ -99,11 +100,11 @@ EOCrender::EOCrender(int w, int h) :m_height(h), m_width(w), m_pScene(NULL)
 #ifdef OPTIX
 void EOCrender::initOptix()
 {
-	int cudaTexWidth = ROWLARGER * m_width;
-	int cudaHeight = ROWLARGER * m_height;
+	m_cudaTexWidth = ROWLARGER * m_width;
+	m_cudaTexHeight = ROWLARGER * m_height;
 	glGenBuffers(1, &m_optixPbo);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_optixPbo);
-	glBufferData(GL_PIXEL_UNPACK_BUFFER, cudaTexWidth * cudaHeight * sizeof(float4), 0, GL_STREAM_READ);
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, m_cudaTexWidth * m_cudaTexHeight * sizeof(float4), 0, GL_STREAM_READ);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 	glGenTextures(1, &m_optixTex);
@@ -112,14 +113,14 @@ void EOCrender::initOptix()
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F_ARB, cudaTexWidth, cudaHeight, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F_ARB, m_cudaTexWidth ,m_cudaTexHeight, 0, GL_RGBA, GL_FLOAT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 
 	
 	glGenBuffers(1, &m_optixWorldPbo);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_optixWorldPbo);
-	glBufferData(GL_PIXEL_UNPACK_BUFFER, cudaTexWidth * cudaHeight * sizeof(float4), 0, GL_STREAM_READ);
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, m_cudaTexWidth * m_cudaTexHeight  * sizeof(float4), 0, GL_STREAM_READ);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 	glGenTextures(1, &m_optixWorldTex);
@@ -128,10 +129,10 @@ void EOCrender::initOptix()
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F_ARB, cudaTexWidth, cudaHeight, 0, GL_RGBA, GL_FLOAT, NULL);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F_ARB, m_cudaTexWidth, m_cudaTexHeight, 0, GL_RGBA, GL_FLOAT, NULL);
 	glBindTexture(GL_TEXTURE_2D, 0);
 
-	const int optixWidth = cudaTexWidth, optixHeight = m_height;
+	const int optixWidth = m_cudaTexWidth, optixHeight = m_height;
 	try
 	{
 		m_rtContext = optix::Context::create();
@@ -139,7 +140,7 @@ void EOCrender::initOptix()
 		m_rtContext->setEntryPointCount(1);
 		m_rtContext["shadow_ray_type"]->setUint(0u);
 		m_rtContext["scene_epsilon"]->setFloat(1e-4f);
-		m_rtContext["resolution"]->setFloat(cudaTexWidth, cudaHeight);
+		m_rtContext["resolution"]->setFloat(m_cudaTexWidth, m_cudaTexHeight);
 
 		std::vector<int> enabled_devices = m_rtContext->getEnabledDevices();
 		m_rtContext->setDevices(enabled_devices.begin(), enabled_devices.begin() + 1);
@@ -155,13 +156,13 @@ void EOCrender::initOptix()
 		m_rtContext["request_texture"]->setTextureSampler(m_rtTexture);
 
 		m_rtfinalBuffer = m_rtContext->createBufferFromGLBO(RT_BUFFER_OUTPUT, m_optixPbo);
-		m_rtfinalBuffer->setSize(cudaTexWidth, cudaHeight);
+		m_rtfinalBuffer->setSize(m_cudaTexWidth, m_cudaTexHeight);
 		m_rtfinalBuffer->setFormat(RT_FORMAT_FLOAT4);
 		m_rtContext["result_buffer"]->setBuffer(m_rtfinalBuffer);
 
 		
 		m_rtWorldBuffer = m_rtContext->createBufferFromGLBO(RT_BUFFER_OUTPUT, m_optixWorldPbo);
-		m_rtWorldBuffer->setSize(cudaTexWidth, cudaHeight);
+		m_rtWorldBuffer->setSize(m_cudaTexWidth, m_cudaTexHeight);
 		m_rtWorldBuffer->setFormat(RT_FORMAT_FLOAT4);
 		m_rtContext["position_buffer"]->setBuffer(m_rtWorldBuffer);
 
@@ -225,6 +226,24 @@ void EOCrender::optixTracing()
 	glBindTexture(GL_TEXTURE_2D, 0);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	glPopAttrib();
+	
+	/*
+	glEnable(GL_TEXTURE_2D);
+	BYTE *pTexture = NULL;
+	pTexture = new BYTE[cudaTexWidth*cudaTexHeight * 3];
+	memset(pTexture, 0, cudaTexWidth*cudaTexHeight * 3 * sizeof(BYTE));
+
+	glBindTexture(GL_TEXTURE_2D, m_optixTex);//TexPosId   PboTex
+
+	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, pTexture);
+
+	int w = cudaTexWidth;
+	int h = cudaTexHeight;
+	Fbo::SaveBMP("optix.bmp", pTexture, w, h);
+	if (pTexture)
+	delete[] pTexture;
+	glBindTexture(GL_TEXTURE_2D, 0);//TexPosId   PboTex
+	*/
 
 }
 nv::vec2f toScreen(nv::vec4f value, nv::matrix4f mvp)

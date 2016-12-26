@@ -123,8 +123,8 @@ void CudaPboResource::generateTex()
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 		glPopAttrib();
 
-		/*
 		
+		/*
 		if(m_type == construct_t)
 		{
 		glEnable(GL_TEXTURE_2D);
@@ -143,6 +143,7 @@ void CudaPboResource::generateTex()
 
 		glBindTexture(GL_TEXTURE_2D, 0);
 		}*/
+
 		
 	}
 

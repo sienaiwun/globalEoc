@@ -129,10 +129,7 @@ void Init()
 #ifdef OPTIX
 	pEoc->initOptix();
 #endif
-	g_Consturctor = Constructor(1024, 1024);
-	g_Consturctor.setNaveCam(&g_navi_Cam);
-	g_Consturctor.setScene(g_scene);
-	g_Consturctor.init();
+
 	g_Camera.cameraControl();
 	g_navi_Cam.cameraControl();
 	g_pointRender = PointRender(SCREEN_WIDTH, SCREEN_HEIGHT	);
@@ -143,6 +140,12 @@ void Init()
 
 	g_pointRenderFbo = Fbo(1, SCREEN_WIDTH, SCREEN_HEIGHT);
 	g_pointRenderFbo.init();
+
+	g_Consturctor = Constructor(pEoc->getWidth(), pEoc->getHeight());
+	g_Consturctor.setNaveCam(&g_navi_Cam);
+	g_Consturctor.setScene(g_scene);
+	g_Consturctor.setOptixColorTex(pEoc->getOptixTex(), pEoc->getOptixWidth(), pEoc->getOptixHeight());
+	g_Consturctor.init();
 }
 
 
@@ -172,10 +175,11 @@ void Display()
 	drawTex(pEoc->getTopEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.25), nv::vec2f(1, 0.5));
 	//drawTex(pEoc->getTopOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.50), nv::vec2f(1, 0.75));
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
-	//g_Consturctor.construct();
-	//drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
+	g_Consturctor.construct();
+	 drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
 	g_Consturctor.render(g_bufferShader, texManager);
 	CHECK_ERRORS();
+	/*
 	g_pointRenderFbo.begin();
 	g_OptixPointRender.setCamera(&g_navi_Cam);
 	g_OptixPointRender.setColorTex(pEoc->getOptixTex());
@@ -188,6 +192,7 @@ void Display()
 	g_pointRender.render(false);
 	g_pointRenderFbo.end();
 	drawTex(g_pointRenderFbo.getTexture(0), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
+	*/
 	g_Consturctor.render(g_bufferShader, texManager);
 	drawTex(g_Consturctor.getBuffer().getTexture(0), true, nv::vec2f(0.75, 0.5), nv::vec2f(1, 0.75));
 	//drawTex(pEoc->getRenderFbo()->getTexture(0), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.75, 0.50));

@@ -24,6 +24,7 @@ public:
 
 enum cudaTexType
 {
+	optixColorTex_t,
 	occluderbuffer_t,
 	occluderTopbuffer_t,
 	edgebuffer_t,

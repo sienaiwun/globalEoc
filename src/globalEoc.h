@@ -35,6 +35,14 @@ public:
 		m_eocTopCam.setOriginCamera(pCamera);
 	}
 	void render(textureManager & manager);
+	inline int getWidth()
+	{
+		return m_width;
+	}
+	inline int getHeight()
+	{
+		return m_height;
+	}
 	inline void setScene(Scene *pScene)
 	{
 		m_pScene = pScene;
@@ -87,7 +95,14 @@ public:
 	{
 		return &m_eocTopCam;
 	}
-	
+	inline int getOptixWidth()
+	{
+		return m_cudaTexWidth;
+	}
+	inline int getOptixHeight()
+	{
+		return m_cudaTexHeight;
+	}
 private:
 	bool m_debugSwap;
 	EocCamera m_eocRightCam;
@@ -113,7 +128,7 @@ private:
 	Fbo m_occludedRightBuffer;
 	Fbo m_occludedTopBuffer;
 	Fbo debugFbo;
-
+	int m_cudaTexWidth, m_cudaTexHeight;
 	RowCounter * pCounter;
 #ifdef OPTIX
 public:
