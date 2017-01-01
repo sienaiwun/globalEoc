@@ -31,6 +31,10 @@ public:
 		m_toOriginDis = std::max<float>(0.0, m_toOriginDis);
 	}
 	void Look();
+	inline nv::vec3f getD()
+	{
+		return m_eocCamera.getDirectionR();
+	}
 private:
 	Camera * m_pOriginCamera;
 	Camera m_eocCamera;

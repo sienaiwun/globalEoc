@@ -3,7 +3,7 @@
 #include <nvMatrix.h>
 #include "Camera.h"
 #define FLT_MAX 99999.9
-texture<float4, 2, cudaReadModeElementType> cudaProgTex;//记录的是Edge,edge里面x记录x的sobal,edge里面y记录y的sobal
+texture<float4, 2, cudaReadModeElementType> cudaEdgeTex;//记录的是Edge,edge里面x记录x的sobal,edge里面y记录y的sobal
 texture<float4, 2, cudaReadModeElementType> cudaOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaTopOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaColorTex;
@@ -31,6 +31,8 @@ __device__ int d_atomic;
 __device__ float3 d_cameraPos;
 __device__ float3 d_eocPos;
 __device__ float3 d_eocTopPos;
+__device__ float3 d_rightRD;
+__device__ float3 d_topRD;
 float* modelView;
 __device__ float* d_modelView;
 float* proj;
@@ -156,34 +158,37 @@ __device__ float3 projective_interpo(float3 beginPos, float3 endPos, float ratio
 	float real_ratio = (real_z - z1) / (z2 - z1);
 	return beginPos* real_ratio + endPos  * (1 - real_ratio);
 }
-__device__ bool isVolume(float2 uv, int *state)
+__device__ bool isVolume(float2 uv)
 {
-	//if (uv.x > 230 && uv.x < 300)
-	//	return true;
 	float4 value = tex2D(cudaOccuderTex, uv.x, uv.y);
 	return value.x > 0.5;
 }
-__device__ bool isVolumeTop(float2 uv, int * state)
+__device__ bool isVolumeTop(float2 uv)
 {
 	float4 value = tex2D(cudaTopOccuderTex, uv.x, uv.y);
 	return value.x > 0.5;
 
 }
-__device__ bool isEdge(float2 uv, int * state)
+__device__ bool isEdge(float2 uv)
 {
-	return tex2D(cudaProgTex, uv.x, uv.y).x > 0.05;
+	return tex2D(cudaEdgeTex, uv.x, uv.y).x > 0.05;
 }
-__device__ bool isEdgeTop(float2 uv, int * state)
+__device__ bool isEdgeTop(float2 uv)
 {
-	return tex2D(cudaProgTex, uv.x, uv.y).y > 0.05;
+	return tex2D(cudaEdgeTex, uv.x, uv.y).y > 0.05;
 }
 __device__ bool isMinusEdge(float2 uv)
 {
-	return tex2D(cudaProgTex, uv.x, uv.y).x < -0.05;
+	return tex2D(cudaEdgeTex, uv.x, uv.y).x < -0.05;
 }
 __device__ bool isMinusEdgeTop(float2 uv)
 {
-	return tex2D(cudaProgTex, uv.x, uv.y).y < -0.05;
+	return tex2D(cudaEdgeTex, uv.x, uv.y).y < -0.05;
+}
+__device__ bool isTracingEdge(float2 tc)
+{
+	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
+	return isEdge(nonNorTc) || isEdgeTop(nonNorTc) || isMinusEdge(nonNorTc) || isMinusEdgeTop(nonNorTc);
 }
 
 __device__ float2 toUv(int x, int y)
@@ -209,10 +214,9 @@ __global__ void countRowKernelTop(int kernelWidth, int kernelHeight)
 		float2 currentUv = toUv(index, y);
 		if (isMinusEdgeTop(currentUv))
 		{
-			//printf("last y:%d\n", y);
 			lastMinusIndey = y;
 		}
-		if (isVolumeTop(currentUv, &state) && etype == notVolumn)
+		if (isVolumeTop(currentUv) && etype == notVolumn)
 		{
 			//printf("insert :%d\n", y);
 			listIndex = atomicAdd(&d_atomic, 1);
@@ -225,21 +229,19 @@ __global__ void countRowKernelTop(int kernelWidth, int kernelHeight)
 
 			etype = isVolumn;
 		}
-		else if (isVolumeTop(currentUv, &state) && etype == isVolumn)
+		else if (isVolumeTop(currentUv) && etype == isVolumn)
 		{
 
 
 		}
-		else if (etype == isVolumn && isEdgeTop(currentUv, &state))
+		else if (etype == isVolumn && isEdgeTop(currentUv))
 		{
-		//	printf("end :%d\n", y);
-
-
-			d_listBuffer[listIndex].endIndex = y;
+			d_listBuffer[listIndex].endIndex = y-1;
 			etype = notVolumn;
 		}
 	}
 }
+// 记录interval  interval的leftEdge 记录最左边的edge（为非冗余渲染用），beginIndex记录第一个遮挡的像素。endIndex 记录的是右边界（右边像素+1位）
 __global__ void countRowKernel(int kernelWidth, int kernelHeight)
 {
 	int y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
@@ -264,7 +266,7 @@ __global__ void countRowKernel(int kernelWidth, int kernelHeight)
 		{
 			lastMinusIndex = x;
 		}
-		if (isVolume(currentUv, &state) && etype == notVolumn)
+		if (isVolume(currentUv) && etype == notVolumn)
 		{
 			//printf("insert :%d\n", x);
 			listIndex = atomicAdd(&d_atomic, 1);
@@ -277,16 +279,16 @@ __global__ void countRowKernel(int kernelWidth, int kernelHeight)
 			etype = isVolumn;
 
 		}
-		else if (isVolume(currentUv, &state) && etype == isVolumn)
+		else if (isVolume(currentUv) && etype == isVolumn)
 		{
 
 
 		}
-		else if (etype == isVolumn && isEdge(currentUv, &state))
+		else if (etype == isVolumn && isEdge(currentUv))
 		{
 			//printf("end :%d\n", x);
 
-			d_listBuffer[listIndex].endIndex = x;
+			d_listBuffer[listIndex].endIndex = x-1;
 			etype = notVolumn;
 		}
 
@@ -361,7 +363,7 @@ __device__ void FillSpanTop(int beginY, int endY, int x, float2 beginUv, float2 
 	//printf("begin(%f,%f),end(%f,%f),d_outTextureWidth:%d\n", beginUv.x, beginUv.y, endUv.x, endUv.y, d_outTextureWidth);
 	//printf("endY:%d,d_outTopTextureHeight:%d,top:%d\n", endY, d_outTopTextureHeight, top);
 
-	for (int y = beginY; y < top; y++)
+	for (int y = beginY; y <= top; y++)
 	{
 		int index = y*d_outTopTextureWidth + x;
 		float uvy = beginUv.y + (endUv.y - beginUv.y)*(y - beginY) / (top - beginY);
@@ -427,12 +429,15 @@ __global__ void renderToTexutreTop(int kernelWidth, int kernelHeight)
 // 在第y 行的beginX 到endX直接记录中空的区域的位置信息leftEdge是用来评估左边边界，endUv是用来算左右两边的深度插值
 __device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge,int accumIndex )
 {
-	int top = min(endX, d_outTextureWidth);
+	int top = min(endX, d_outTextureWidth - 1);
 	//printf("volumn begin:%d,end:%d,top:%d\n",beginX,endX,top);
-	float3 beforePos = make_float3(tex2D(cudaPosTex, endUv - 0.5, y));
-
-	float3 endPos = make_float3(tex2D(cudaPosTex, endUv + 0.5, y));
-	float3 leftEdgePos = make_float3(tex2D(cudaPosTex, leftEdge + 1.5, y));
+	float2 beforeEdgeUv = toUv(endUv - 1, y);
+	float3 beforePos = make_float3(tex2D(cudaPosTex, beforeEdgeUv.x, beforeEdgeUv.y));
+	float2 endEdgeUv = toUv(endUv, y);
+	float3 endPos = make_float3(tex2D(cudaPosTex, endEdgeUv.x, endEdgeUv.y));
+	// 记录高点
+	float2 leftEdgeUv = toUv(leftEdge + 1, y); 
+	float3 leftEdgePos = make_float3(tex2D(cudaPosTex, leftEdgeUv.x, leftEdgeUv.y));
 	float3 eoc_pos = d_eocPos;
 	/*printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
 	printf("beforePos:(%f,%f,%f)\n", beforePos.x, beforePos.y, beforePos.z);
@@ -442,10 +447,10 @@ __device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge,
 
 	//for (int i = 0; i < 4; i++)
 	//	printf("(%f,%f,%f,%f)\n", d_modelView[4 * i + 0], d_modelView[4 * i + 1], d_modelView[4 * i + 2], d_modelView[4 * i + 3]);
-	for (int x = beginX; x < top; x++)
+	for (int x = beginX; x <= top; x++)
 	{
-		int lenght = (top - 1 - beginX);
-		float ratio = (x * 1.0f - beginX*1.0f) / (top - 1 - beginX);
+		int lenght = (top + 1 - beginX);
+		float ratio = (x * 1.0f - beginX*1.0f) / lenght;
 		float3 realPos = projective_interpo(beforePos, endPos, ratio);
 		int index = y*d_outTextureWidth + x;
 		float dis = distance(leftEdgePos, realPos, eoc_pos);
@@ -455,21 +460,23 @@ __device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge,
 		accumIndex++;
 	}
 }
-// 在第y 行的beginX 到endX 的这一块区域插入原来图像从beginUV到endUV的这一横条图像accumIndexX 记录原来图像到新图像的映射
-__device__ void FillSpan(int beginX, int endX, int y, float2 beginUv, float2 endUv,int* accumIndexX)
+// 在第y 行的beginX 到endX闭区间 的这一块区域插入原来图像从beginUV到endUV的这一横条图像accumIndexX 记录原来图像到新图像的映射
+__device__ void FillSpan(int beginX, int endX, int y, float2 beginUv, float2 endUv,int* accumIndexX) //beginUv 用了toUv函数
 {
-	int top = min(endX, d_outTextureWidth);
-	for (int x = beginX; x < top; x++)
+	int top = min(endX, d_outTextureWidth-1);
+	for (int x = beginX; x <= top; x++)
 	{
 		int index = y*d_outTextureWidth + x;
 		float uvx = beginUv.x + (endUv.x - beginUv.x)*(x - beginX) / (top - beginX);
 		d_cudaTexture[index] = tex2D(cudaColorTex, uvx, beginUv.y);
+		//记录映射关系
 		int originMappos = y*d_imageWidth + *accumIndexX;
 		d_map_buffer[originMappos].x = x;
 		*accumIndexX += 1;
 	}
 }
 __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
+// 竖需要改动
 {
 	int y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
 	if (y > kernelHeight)
@@ -508,13 +515,10 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 		leftEdgeIndex = currentNote.leftEdge;
 		fillBegin = texBegin + acuumPixel;
 		fillEnd = texEnd + acuumPixel;
-		FillSpan(fillBegin*factor, fillEnd*factor, y, toUv(texBegin, y), toUv(texEnd, y), &accum_index);  //for 循环，左闭右开
-		FillVolumn((fillEnd)*factor, (fillEnd + span)*factor, y, texEnd, leftEdgeIndex, accum_index);
-
+		FillSpan(fillBegin*factor, fillEnd*factor, y, toUv(texBegin, y), toUv(texEnd, y), &accum_index);  //内层 for 循环，左闭右闭
+		FillVolumn((fillEnd+1)*factor, (fillEnd + span )*factor, y, texEnd+1, leftEdgeIndex, accum_index);//内层 for 循环，左闭右闭
 		acuumPixel += span;
-		texBegin = currentNote.endIndex;
-		//printf("texBegin:%d,acuumPixel:%d,n:%d\n", texBegin, acuumPixel);
-
+		texBegin = currentNote.endIndex+1;
 	}
 	fillBegin = texBegin + acuumPixel;
 	//printf("final:(%d,%d) u(%f,%f)\n", fillBegin, d_imageWidth + span, toUv(texBegin, y).x, toUv(d_imageWidth - 1, y).x);
@@ -562,6 +566,10 @@ extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocC
 	checkCudaErrors(cudaMemcpyToSymbol(d_cameraPos, &pCamera->getCameraPos(), 3 * sizeof(float)));
 	checkCudaErrors(cudaMemcpyToSymbol(d_eocPos, &pEocCam->getCameraPos(), 3 * sizeof(float)));
 	checkCudaErrors(cudaMemcpyToSymbol(d_eocTopPos, &pEocTopCamera->getCameraPos(), 3 * sizeof(float)));
+	
+	checkCudaErrors(cudaMemcpyToSymbol(d_rightRD, &pEocCam->getDirectionR(), 3 * sizeof(float)));
+	checkCudaErrors(cudaMemcpyToSymbol(d_topRD, &pEocTopCamera->getDirectionR(), 3 * sizeof(float)));
+
 
 	checkCudaErrors(cudaMemcpy(modelView, pCamera->getModelViewMat(), 16 * sizeof(float), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpyToSymbol(d_modelView, &modelView, sizeof(float*)));
@@ -628,8 +636,8 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 	}
 	else if (edgebuffer_t == pResouce->getType())
 	{
-		checkCudaErrors(cudaBindTextureToArray(cudaProgTex, tmpcudaArray, channelDesc));
-		cudaProgTex.filterMode = cudaFilterModePoint;
+		checkCudaErrors(cudaBindTextureToArray(cudaEdgeTex, tmpcudaArray, channelDesc));
+		cudaEdgeTex.filterMode = cudaFilterModePoint;
 	}
 	else if (color_t == pResouce->getType())
 	{
@@ -746,11 +754,7 @@ __device__ float3 toFloat3(float4 inValue)
 {
 	return make_float3(inValue.x / inValue.w, inValue.y / inValue.w, inValue.z / inValue.w);
 }
-__device__ bool isTracingEdge(float2 tc)
-{
-	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
-	return abs(tex2D(cudaProgTex, nonNorTc.x, nonNorTc.y).x) > 0.05 || abs(tex2D(cudaProgTex, nonNorTc.x, nonNorTc.y).y) > 0.05;
-}
+
 
  __device__ int intersectTexRay(float3 posW, float3 directionW,	float4& oc)
 {
@@ -845,13 +849,14 @@ __device__ bool isTracingEdge(float2 tc)
 		{
 			
 				
-				color = colorTextreNorTc(tc);
 				float lastAlpha =0;
 				if (n >= 1)
 					lastAlpha = (float)(n - 1) / stepN;
+				//printf("last tc\n");
 				float2 lastTc = make_float2(projStart.x, projStart.y) + interval* lastAlpha;
 				if (isTracingEdge(lastTc))
 				{
+					
 					int localN = n;
 					float4 localcolor;
 					bool getColor = canGetMappedPosition(tc, &localcolor);
@@ -862,21 +867,20 @@ __device__ bool isTracingEdge(float2 tc)
 						getColor = canGetMappedPosition(localTc, &localcolor);
 						float localRayPointZ = 1 / ((1 - localalpha)*(1 / rayStart.z) + (localalpha)*(1 / rayEnd.z));
 						float localSamplePointZ = localcolor.w;
-						//printf("tc:(%f,%f),z:(%f,%f)\n", 1024 * localTc.x, 1024 * localTc.y, localRayPointZ, localSamplePointZ);
+						//printf("tc:(%f,%f),z:(%f,%f),localN:%d\n", 1024 * localTc.x, 1024 * localTc.y, localRayPointZ, localSamplePointZ, localN);
 						if ((localRayPointZ < 0) && (localRayPointZ <= localSamplePointZ))
 						{
-							//printf("found tc:(%f,%f),z:(%f,%f)\n", 1024 * localTc.x, 1024 * localTc.y, localRayPointZ, localSamplePointZ);
+						//	printf("found tc:(%f,%f),z:(%f,%f)\n", 1024 * localTc.x, 1024 * localTc.y, localRayPointZ, localSamplePointZ);
 							oc = localcolor;
 							return 1;
 						}
 					    localN ++;
 					   
 					};
-					/*
-					  进行隐藏区域的光线跟踪
-					*/
-					
+				
 				}
+				//printf("fetch color");
+				color = colorTextreNorTc(tc);
 				color.w = 1;
 				oc = color;
 				//printf("found");
@@ -897,8 +901,8 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
- //	if (x != 487 || y != 514)
-//		return;
+ 	//if (x != 487 || y != 514)
+	//	return;
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
 	float3 beginPoint = getImagePos(tc) ;

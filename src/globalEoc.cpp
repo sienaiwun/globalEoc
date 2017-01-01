@@ -201,6 +201,8 @@ void EOCrender::optixTracing()
 		m_rtContext["bbmin"]->setFloat(pOriginCam->getImageMin().x, pOriginCam->getImageMin().y);
 		m_rtContext["bbmax"]->setFloat(pOriginCam->getImageMax().x, pOriginCam->getImageMax().y);
 		m_rtContext["optixModelView"]->setMatrix4x4fv(false, modelView.get_value());
+		m_rtContext["rightND"]->setFloat(getRightND().x, getRightND().y, getRightND().z);
+		m_rtContext["topND"]->setFloat(getTopD().x, getTopD().y, getTopD().z);
 		m_rtContext->launch(0, cudaTexWidth, cudaTexHeight);
 	}
 	catch (optix::Exception& e) {
@@ -273,7 +275,7 @@ void EOCrender::render(textureManager & manager)
 	assert(m_pScene != NULL);
 	m_gbufferFbo.begin();
 	m_pScene->render(m_gbufferShader, manager, pRenderCamera);
-	//gbufferFbo.SaveBMP("gbuffer.bmp", 0);
+	//m_gbufferFbo.SaveBMP("gbuffer.bmp", 0);
 	m_gbufferFbo.end();
 
 	//glCullFace(GL_BACK);

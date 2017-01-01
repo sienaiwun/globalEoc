@@ -146,6 +146,8 @@ void Init()
 	g_Consturctor.setScene(g_scene);
 	g_Consturctor.setOptixColorTex(pEoc->getOptixTex(), pEoc->getOptixWidth(), pEoc->getOptixHeight());
 	g_Consturctor.init();
+	pEoc->render(texManager);
+
 }
 
 
@@ -164,8 +166,7 @@ void Display()
 		g_navi_Cam.cameraControl();
 	}
 	
-	pEoc->render(texManager);
-	
+
 	//drawTex(pEoc->getCudaTex(), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.65, 1.0));
 	//drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0-0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));
 //	drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0 - 0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));//
@@ -176,7 +177,7 @@ void Display()
 	//drawTex(pEoc->getTopOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.50), nv::vec2f(1, 0.75));
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
 	g_Consturctor.construct();
-	 drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
+	drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
 	g_Consturctor.render(g_bufferShader, texManager);
 	CHECK_ERRORS();
 	/*
@@ -201,7 +202,7 @@ void Display()
 		static char fps_text[32];
 		float fps = g_time.getFps();
 		sprintf(fps_text, "fps: %6.1f", fps);
-		drawText(fps_text, 10.0f, 10.0f, GLUT_BITMAP_8_BY_13);
+		drawText(fps_text, 30.0f, 80.0f, GLUT_BITMAP_8_BY_13);
 	}
 	glutSwapBuffers();
 	glutReportErrors();

@@ -39,8 +39,11 @@ rtDeclareVariable(rtObject, reflectors, , );
 rtDeclareVariable(float3, eye_pos, , );
 rtDeclareVariable(float3, eoc_eye_right_pos, , );
 rtDeclareVariable(float3, eoc_eye_top_pos, , );
+rtDeclareVariable(float3, rightND, , );
+rtDeclareVariable(float3, topND, , );
 rtDeclareVariable(optix::Matrix4x4, optixModeView_Inv, , );
 rtDeclareVariable(float2, resolution, , );
+
 
 rtDeclareVariable(optix::Matrix4x4, optixModelView, , );
 struct PerRayData_shadow
@@ -80,9 +83,9 @@ RT_PROGRAM void shadow_request()
 		result_buffer[launch_index] = make_float4(prd.attenuation,1);
 		result_buffer[launch_index].z =( result_buffer[launch_index].z +3 )/4;
 		float3 worldPos = ray_origin + ray_direction*prd.t_hit;
-		float4 temp = make_float4(worldPos, 1)*optixModelView;
-		temp = temp / temp.w;
-		result_buffer[launch_index].w = temp.z;
+		float3 topCameraToWorldPos = worldPos - eoc_eye_right_pos;
+		float dis = dot(topCameraToWorldPos, rightND);
+		result_buffer[launch_index].w = -dis;
 		position_buffer[launch_index] = make_float4(worldPos,1);
 		return;
 	}
@@ -100,9 +103,9 @@ RT_PROGRAM void shadow_request()
 		result_buffer[launch_index] = make_float4(prd.attenuation, 1);
 		result_buffer[launch_index].y = (result_buffer[launch_index].y + 3) / 4;
 		float3 worldPos = ray_origin + ray_direction*prd.t_hit;
-		float4 temp = make_float4(worldPos, 1)*optixModelView;
-		temp = temp / temp.w;
-		result_buffer[launch_index].w = temp.z;
+		float3 topCameraToWorldPos = worldPos - eoc_eye_top_pos;
+		float dis = dot(topCameraToWorldPos, topND);
+		result_buffer[launch_index].w = -dis;
 		position_buffer[launch_index] = make_float4(worldPos, 1);
 		return;
 	}

@@ -18,7 +18,6 @@
 class ListNote
 {
 public:
-
 	unsigned int nextPt, beginIndex, endIndex, leftEdge;
 };
 

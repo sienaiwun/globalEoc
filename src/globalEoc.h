@@ -103,6 +103,14 @@ public:
 	{
 		return m_cudaTexHeight;
 	}
+	inline nv::vec3f getRightND()
+	{
+		return m_eocRightCam.getD();
+	}
+	inline nv::vec3f getTopD()
+	{
+		return m_eocTopCam.getD();
+	}
 private:
 	bool m_debugSwap;
 	EocCamera m_eocRightCam;

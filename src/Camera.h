@@ -61,6 +61,11 @@ public:
 		m_vPosition = CVector3(newOrigin.x, newOrigin.y, newOrigin.z);
 		m_vView = CVector3(focus.x, focus.y, focus.z);
 	}
+	nv::vec3f getDirectionR()
+	{
+		CVector3 D = m_vView - m_vPosition;
+		return normalize(nv::vec3f((float*)&D));
+	}
 	// These are are data access functions for our camera's private data
 	CVector3 Position() { return m_vPosition; }
 	CVector3 View()		{ return m_vView; }
