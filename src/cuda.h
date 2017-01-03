@@ -15,10 +15,12 @@
 //#define DEBUG
 #define ROWLARGER (1.5)
 
+// nextPt 记录下个节点，beginIndex 记录左边的遮挡，endIndex 记录右边边界-1，leftEdge记录左边的edge,确实在edge上
 class ListNote
 {
 public:
 	unsigned int nextPt, beginIndex, endIndex, leftEdge;
+	
 };
 
 enum cudaTexType
