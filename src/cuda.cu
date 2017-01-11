@@ -39,6 +39,9 @@ float* proj;
 __device__ float* d_porj;
 
 
+float* modelViewRight;
+__device__ float* d_modelViewRight;
+
 float* modelView_construct;
 float* project_construct;
 float* modelView_inv;
@@ -93,14 +96,17 @@ __host__ __device__ void MutiMatrix(float* src, float* matrix, float* r)
 		}
 
 }
-__device__ bool rayIntersertectTriangle(float3 origin, float3 directionN, float3 cameraPos, float3 edgePoint1, float3 edgePoint2, float3* pIntersectWorld3, float3* pLineIntersect)
+__device__ bool rayIntersertectTriangle(float3 origin, float3 directionN, float3 cameraPos, float3 edgePoint1, float3 edgePoint2, float3* pIntersectWorld3, float3* pLineIntersect,bool& isOnrTiangle)
 {
+	//printf("origin:(%f,%f,%f)\n", origin.x, origin.y, origin.z);
+	//printf("directionN:(%f,%f,%f)\n", directionN.x, directionN.y, directionN.z);
+
 	const float3 e0 = edgePoint1 - cameraPos;
 	const float3 e1 = cameraPos - edgePoint2;
 	const float3 e2 = edgePoint2 - edgePoint1;
 	const float3 n = normalize(cross(e1, e0));
 	float3 toIntersection;
-	if (dot(n, directionN) > 0.001)
+	if (0)
 	{
 		toIntersection = directionN * dot(cameraPos - origin, n) / dot(n, directionN);
 		const float3 intersectPos = origin + toIntersection;
@@ -110,17 +116,22 @@ __device__ bool rayIntersertectTriangle(float3 origin, float3 directionN, float3
 		float3 ration = (lineIntersect - edgePoint1) / (edgePoint2 - edgePoint1);
 		*pIntersectWorld3 = intersectPos;
 		*pLineIntersect = lineIntersect;
+		isOnrTiangle = false;
 		return  0 < ration.x && ration.x <= 1 && 0 < ration.y && ration.y <= 1 && 0 < ration.z && ration.z <= 1;
 
 	}
 	else
 	{
 		const float3 lineNormal2 = normalize(cross(normalize(e2), n));
-		const float3 tolineIntersectPoint = directionN* dot(edgePoint1 - cameraPos, lineNormal2) / dot(directionN, lineNormal2);
-		const float3  lineIntersect = cameraPos + tolineIntersectPoint;
+		const float3 tolineIntersectPoint = directionN* dot(edgePoint1 - origin, lineNormal2) / dot(directionN, lineNormal2);
+		//printf("tolineIntersectPoint:(%f,%f,%f)\n", tolineIntersectPoint.x, tolineIntersectPoint.y, tolineIntersectPoint.z);
+		const float3  lineIntersect = origin + tolineIntersectPoint;
 		float3 ration = (lineIntersect - edgePoint1) / (edgePoint2 - edgePoint1);
+		//printf("intersect:(%f,%f,%f)\n", lineIntersect.x, lineIntersect.y, lineIntersect.z);
 		*pIntersectWorld3 = lineIntersect;
 		*pLineIntersect = lineIntersect;
+		isOnrTiangle = true;
+		//printf("linar(%f,%f,%f)\n", ration.x, ration.y, ration.z);
 		return  0 < ration.x && ration.x <= 1 && 0 < ration.y && ration.y <= 1 && 0 < ration.z && ration.z <= 1;
 	}
 	
@@ -141,10 +152,14 @@ __device__ float4 colorTextreNorTc(float2 tc)
 }
 __device__ int getNoteIndex(float2 tc)
 {
+	//printf("in note id\n");
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
+	
 	int2 mapTx = nearestTc(nonNorTc);
+	//printf("mapped tc:(%d,%d)\n", mapTx.x, mapTx.y);
 	int index = mapTx.y * d_imageWidth + mapTx.x;
-	int noteId = (int)(d_map_buffer[index].y + 0.5);
+	int noteId = (int)(d_map_buffer[index].z + 0.5);
+	//printf("noteId tc:(%d)\n", noteId);
 	return noteId;
 }
 
@@ -207,19 +222,38 @@ __device__ float repo(float value)
 __device__ float getRatioInSpan(float3 beginPos, float3 endPos, float* p_modelView, float3 testPos)
 {
 	float x, y, z1, z2,z3;
-	MutiMatrix(p_modelView, beginPos.x, beginPos.y, beginPos.z, x, y, z1);
-	MutiMatrix(p_modelView, endPos.x, endPos.y, endPos.z, x, y, z2);
-	MutiMatrix(p_modelView, testPos.x, testPos.y, testPos.z, x, y, z3);
-	return (repo(z3) - repo(z1)) / (repo(z2) - repo(z1));
+	float4 temp = MutiMatrixN(p_modelView, make_float4(beginPos.x, beginPos.y, beginPos.z, 1));
+	z1 = temp.z;
+	temp = MutiMatrixN(p_modelView, make_float4(endPos.x, endPos.y, endPos.z, 1));
+	z2 = temp.z;
+	temp = MutiMatrixN(p_modelView, make_float4(testPos.x, testPos.y, testPos.z, 1));
+	z3 = temp.z;
+	float real_ratio = (repo(z1) - repo(z3)) / (repo(z1) - repo(z2));
+	/*printf("beginPos:(%f,%f,%f)\n", beginPos.x, beginPos.y, beginPos.z);
+	printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
+	printf("testPos:(%f,%f,%f)\n", testPos.x, testPos.y, testPos.z);
+	printf("z1:%f,z2:%f,z3:%f\n",z1,z2,z3);
+	printf("repo z1:%f,z2:%f,z3:%f\n", repo(z1), repo(z2), repo(z3));
+	printf("ration:%f\n", real_ratio);
+	*/
+	return real_ratio;
+	return (z3 - z2) / (z1 - z2);
 }
-__device__ float3 projective_interpo(float3 beginPos, float3 endPos, float* p_modelView,float ratio)
+__device__ float3 projective_interpo(float3 beginPos, float3 endPos, float* p_modelView,float ratio,int print = 0)
 {
 	float x, y, z1, z2;
-	MutiMatrix(p_modelView, beginPos.x, beginPos.y, beginPos.z, x, y, z1);
-	MutiMatrix(p_modelView, endPos.x, endPos.y, endPos.z, x, y, z2);
-	float real_z = repo(ratio *repo(z1) + (1 - ratio) * repo(z2));
+	float4 temp = MutiMatrixN(p_modelView, make_float4(beginPos, 1));
+	z1 = temp.z;
+	temp = MutiMatrixN(p_modelView, make_float4(endPos, 1));
+	z2 = temp.z;
+	float real_z = repo((1-ratio) *repo(z1) +  ratio* repo(z2));
 	float real_ratio = (real_z - z1) / (z2 - z1);
-	return beginPos* real_ratio + endPos  * (1 - real_ratio);
+	if (print)
+	{
+	//	 printf("z1:%f,z2:%f,ratio:%f,real_z:%f,real_ratio:%f\n",z1,z2,ratio, real_z,real_ratio);
+	
+	}
+	return beginPos*(1 - real_ratio) + endPos  *  real_ratio;
 }
 __device__ bool isVolume(float2 uv)
 {
@@ -443,8 +477,8 @@ __global__ void renderToTexutreTop(int kernelWidth, int kernelHeight)
 		FillLine(index);
 		return;
 	}
-//	if (index != 512)
-//		return;
+	//if (index != 512)
+	//	return;
 	int listIndex = index;
 	int rowLength = d_imageWidth;
 	ListNote currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
@@ -515,10 +549,11 @@ __device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge,
 	{
 		int lenght = (top + 1 - beginX);
 		float ratio = (x * 1.0f - beginX*1.0f) / lenght;
-		float3 realPos = projective_interpo(beforePos, endPos, d_modelView, ratio);
+		float3 realPos = projective_interpo(beforePos, endPos, d_modelViewRight, ratio);
 		int index = y*d_outTextureWidth + x;
 		float dis = distance(leftEdgePos, realPos, eoc_pos);
 		d_cudaTexture[index] = make_float4(dis, realPos.x, realPos.y, realPos.z);
+		//printf("x:%d,realpos(%f,%f,%f)\n", x, realPos.x, realPos.y, realPos.z);
 		int originMappos = y*d_imageWidth + accumIndex - lenght;
 		d_map_buffer[originMappos].y = x;
 		d_map_buffer[originMappos].z = noteIndex;
@@ -546,8 +581,8 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	int y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
 	if (y > kernelHeight)
 		return;
-	//if (y != 807)
-	//	return;
+	//if (y != 512)
+    //	return;
 	int listIndex = y;
 	int rowLength = d_imageWidth;
 	ListNote currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
@@ -571,7 +606,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	while (currentNote.nextPt != 0)
 	{
 
-		int lastIndex = currentNote.nextPt;
+		int noteIndex = currentNote.nextPt;
 		currentNote = d_listBuffer[currentNote.nextPt];
 		//printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
 
@@ -581,7 +616,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 		fillBegin = texBegin + acuumPixel;
 		fillEnd = texEnd + acuumPixel;
 		FillSpan(fillBegin*factor, fillEnd*factor, y, toUv(texBegin, y), toUv(texEnd, y), &accum_index);  //ÄÚ²ã for Ñ­»·£¬×ó±ÕÓÒ±Õ
-		FillVolumn((fillEnd + 1)*factor, (fillEnd + span)*factor, y, texEnd + 1, leftEdgeIndex, accum_index, lastIndex);//ÄÚ²ã for Ñ­»·£¬×ó±ÕÓÒ±Õ
+		FillVolumn((fillEnd + 1)*factor, (fillEnd + span)*factor, y, texEnd + 1, leftEdgeIndex, accum_index, noteIndex);//ÄÚ²ã for Ñ­»·£¬×ó±ÕÓÒ±Õ
 		acuumPixel += span;
 		texBegin = currentNote.endIndex+1;
 	}
@@ -611,6 +646,8 @@ extern void cudaInit(int height, int width, int k, int rowLarger)
 	checkCudaErrors(cudaMalloc(&modelView, 16 * sizeof(float)));
 	checkCudaErrors(cudaMalloc(&proj, 16 * sizeof(float)));
 	
+	checkCudaErrors(cudaMalloc(&modelViewRight, 16 * sizeof(float)));
+
 	checkCudaErrors(cudaMalloc(&cuda_map_buffer, width*height * sizeof(float4)));
 	checkCudaErrors(cudaMemcpyToSymbol(d_map_buffer, &cuda_map_buffer, sizeof(float*)));
 
@@ -640,6 +677,9 @@ extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocC
 	checkCudaErrors(cudaMemcpyToSymbol(d_modelView, &modelView, sizeof(float*)));
 	checkCudaErrors(cudaMemcpy(proj, pCamera->getProjection(), 16 * sizeof(float), cudaMemcpyHostToDevice));
 	checkCudaErrors(cudaMemcpyToSymbol(d_porj, &proj, sizeof(float*)));
+
+	checkCudaErrors(cudaMemcpy(modelViewRight, pEocCam->getModelViewMat(), 16 * sizeof(float), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpyToSymbol(d_modelViewRight, &modelViewRight, sizeof(float*)));
 
 
 	cudaEvent_t begin_t, end_t;
@@ -807,11 +847,11 @@ void mapConstruct(Camera * pReconstructCamer)
 	
 }
 
-__device__ float3 getImagePos(float2 tc)
+__device__ float3 getImagePos(float2 tc, float* modelViewInv)
 {
 	float2 xy = d_bbmin + (d_bbmax - d_bbmin)*tc;
 	xy = xy;
-	float4 temp = MutiMatrixN(d_modeView_inv_construct, make_float4(xy.x, xy.y, -1, 1));// must
+	float4 temp = MutiMatrixN(modelViewInv, make_float4(xy.x, xy.y, -1, 1));// must
 	temp = temp / temp.w;
 	return make_float3(temp.x, temp.y, temp.z);
 }
@@ -821,6 +861,7 @@ __device__ float3 toFloat3(float4 inValue)
 }
 __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos, float2 tc, float2 projStart, float2 interval, float4* poc)
 {
+	//printf("test tc:(%f,%f)\n", tc.x*d_imageWidth, tc.y*d_imageHeight);
 	float2 d_mapScale = 1.0 / make_float2(d_construct_width, d_construct_height);
 	float4 localcolor;
 	bool getColor = canGetMappedPosition(tc, &localcolor);
@@ -830,22 +871,39 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 	int noteId = getNoteIndex(localTc);
 	ListNote currentNote = *(ListNote*)&d_listBuffer[noteId];
 
-	int texEnd = currentNote.endIndex;
-	float2 beforeEdgeUv = make_float2(texEnd - 1 + 0.5, localTc.y*d_imageHeight);
+	int texEnd = currentNote.endIndex;  // Õâ¸öÊÇÓÒ±ß±ß½ç-µÄÖµ
+	//printf("texEnd:%d\n",texEnd);
+	float2 beforeEdgeUv = make_float2(texEnd + 0.5, localTc.y*d_imageHeight);
 	float3 beforePos = make_float3(tex2D(cudaPosTex, beforeEdgeUv.x, beforeEdgeUv.y));
-	float2 endEdgeUv = make_float2(texEnd + 0.5, localTc.y*d_imageHeight);
+	//printf("beforeEdgeUv.x:%f\n", beforeEdgeUv.x);
+	float2 endEdgeUv = make_float2(texEnd + 1+0.5, localTc.y*d_imageHeight);
 	float3 endPos = make_float3(tex2D(cudaPosTex, endEdgeUv.x, endEdgeUv.y));
 	float3 lineIntersectPos, worldIntersectPos;
-	if (rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforePos, endPos, &worldIntersectPos, &lineIntersectPos))
+	bool isOntriagle;
+	//printf("endEdgeUv.x:%f\n", endEdgeUv.x);
+	//printf("beforePos:(%f,%f,%f)\n", beforePos.x, beforePos.y, beforePos.z);
+	//printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
+	if (rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforePos, endPos, &worldIntersectPos, &lineIntersectPos, isOntriagle))
 	{
-		float ratio = getRatioInSpan(beforePos, endPos, d_modelView, lineIntersectPos);
-		float occludedTcX = currentNote.beginIndex + (currentNote.endIndex - currentNote.beginIndex)*ratio;
+		float ratio = getRatioInSpan(beforePos, endPos, d_modelViewRight, lineIntersectPos);
+		float3 reversePoint3 = projective_interpo(beforePos, endPos, d_modelViewRight, ratio,1);
+		//printf("reversePoint3:(%f,%f,%f)\n", reversePoint3.x, reversePoint3.y, reversePoint3.z);
+		float occludedTcX = currentNote.beginIndex + (currentNote.endIndex - currentNote.beginIndex)* ( ratio);
+		//printf("ratio:%f,beginIndex:%d,endIndex:%d,occludedTcX:%f\n", ratio, currentNote.beginIndex, currentNote.endIndex, occludedTcX);
 		float2 imageTc = make_float2((occludedTcX + 0.5) / d_imageWidth, localTc.y);
 		float4 color;
+		//printf("intersect imageTc:(%f,%f)\n", imageTc.x*d_imageWidth, imageTc.y* d_imageHeight);
 		if (canGetMappedPosition(imageTc, &color))
 		{
+			if (isOntriagle)
+			{
+				//printf("isOntriangle");
+				*poc = color;
+				return 1;
+			}
 			float rayDis = length(worldIntersectPos - cameraPos);
 			float disOnTex = color.w;
+			//printf("rayDis, disOnTex:(%f,%f)\n", rayDis, disOnTex);
 			if (rayDis > disOnTex)
 			{
 				*poc = color;
@@ -948,14 +1006,15 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 		//printf("tc:(%f,%f),n:%f,stepN:%d,z:(%f,%f)\n", 1024 * tc.x, 1024 * tc.y, n, stepN, currRayPointZ, currSamplePointZ);
 		if ((currSamplePointZ<0) && (currRayPointZ <= currSamplePointZ))
 		{		
+			    color = colorTextreNorTc(tc);
 				float lastAlpha =0;
 				if (n >= 1)
 					lastAlpha = (float)(n - 1) / stepN;
 				float2 lastTc = make_float2(projStart.x, projStart.y) + interval* lastAlpha;
 				if (isTracingEdge(lastTc))
 				{
-					// isIntersectNote(float3 posW, float3 directionW, float3 cameraPos, float2 tc,float2 projStart,float2 interval,float4& oc)
-					int stepY = stepN = abs(interval.y) / d_mapScale.y + 1;
+					int stepY  = abs(interval.y) / d_mapScale.y + 1;
+					//printf("interval:(%f,%f),StepY:StepN (%d,%d),gap:%f\n", interval.x, interval.y, stepY, stepN, (float)stepN / stepY);
 					while(isOccluedeArea(tc))
 					{
 						if( isIntersectNote(posW, directionW, d_eocPos, tc, make_float2(projStart.x, projStart.y), interval, &oc))
@@ -968,7 +1027,12 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 							tc = make_float2(projStart.x, projStart.y) + interval* n / stepN;
 						}
 					}
+					return 1;
 				}	
+				color.w = 1;
+				oc = color;
+				//printf("found");
+				return 1;
 		}
 		n += 1;
 		tc = make_float2(projStart.x, projStart.y) + interval* n / stepN;
@@ -984,13 +1048,14 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
- 	//if (x != 487 || y != 514)
+ 	//if (x != 510 || y != 512)
 	//	return;
+	//printf("test:x%d,y:%d\n", x, y);
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
-	float3 beginPoint = getImagePos(tc) ;
+	float3 beginPoint = getImagePos(tc, d_modeView_inv_construct);
 	//printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
-	float3 viewDirection = getImagePos(tc) - d_construct_cam_pos;
+	float3 viewDirection = beginPoint - d_construct_cam_pos;
 
 	//printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
 	float4 outColor;

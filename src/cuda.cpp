@@ -124,25 +124,28 @@ void CudaPboResource::generateTex()
 		glPopAttrib();
 
 		
-		/*
+		
 		if(m_type == construct_t)
 		{
-		glEnable(GL_TEXTURE_2D);
-		BYTE *pTexture = NULL;
-		pTexture = new BYTE[m_width*m_height * 3];
-		memset(pTexture, 0, m_width*m_height * 3 * sizeof(BYTE));
+			/*
+			glEnable(GL_TEXTURE_2D);
+			BYTE *pTexture = NULL;
+			pTexture = new BYTE[m_width*m_height * 3];
+			memset(pTexture, 0, m_width*m_height * 3 * sizeof(BYTE));
 
 
-		glBindTexture(GL_TEXTURE_2D, m_texture);//TexPosId   PboTex
+			glBindTexture(GL_TEXTURE_2D, m_texture);//TexPosId   PboTex
 
 
-		glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, pTexture);
+			glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, pTexture);
 
 
-		Fbo::SaveBMP("b.bmp", pTexture, m_width, m_height);
+			Fbo::SaveBMP("b.bmp", pTexture, m_width, m_height);
 
-		glBindTexture(GL_TEXTURE_2D, 0);
-		}*/
+			glBindTexture(GL_TEXTURE_2D, 0);
+			*/
+		}
+
 
 		
 	}
