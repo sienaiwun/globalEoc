@@ -145,7 +145,7 @@ void EOCrender::initOptix()
 		std::vector<int> enabled_devices = m_rtContext->getEnabledDevices();
 		m_rtContext->setDevices(enabled_devices.begin(), enabled_devices.begin() + 1);
 		
-		m_rtTexture = m_rtContext->createTextureSamplerFromGLImage(getCudaTopTex(), RT_TARGET_GL_TEXTURE_2D);
+		m_rtTexture = m_rtContext->createTextureSamplerFromGLImage(getCudaTex(), RT_TARGET_GL_TEXTURE_2D);
 		m_rtTexture->setWrapMode(0, RT_WRAP_CLAMP_TO_EDGE);
 		m_rtTexture->setWrapMode(1, RT_WRAP_CLAMP_TO_EDGE);
 		m_rtTexture->setWrapMode(2, RT_WRAP_CLAMP_TO_EDGE);
@@ -311,13 +311,15 @@ void EOCrender::render(textureManager & manager)
 	CHECK_ERRORS();
 	m_volumnShader.setEocCamera(m_eocRightCam.getEocCameraP()->getCameraPos());
 	CHECK_ERRORS();
-
+	glEnable(GL_CONSERVATIVE_RASTERIZATION_NV);
 	m_occludedRightBuffer.begin();
 	CHECK_ERRORS();
 	myGeometry::drawQuadMesh(m_volumnShader, m_width, m_height);
 	CHECK_ERRORS();
+	//m_occludedRightBuffer.SaveBMP("Occluder.bmp", 0);
 	m_occludedRightBuffer.end();
 	CHECK_ERRORS();
+	
 
 	// …Ë÷√volumn top
 	CHECK_ERRORS();
@@ -335,6 +337,8 @@ void EOCrender::render(textureManager & manager)
 	//m_occludedTopBuffer.SaveBMP("topOccluder.bmp", 0);
 	m_occludedTopBuffer.end();
 	CHECK_ERRORS();
+	glDisable(GL_CONSERVATIVE_RASTERIZATION_NV);
+
 
 
 	

@@ -11,7 +11,7 @@ in vec3 worldPos[];
 out vec3 pWorldPos;
 
 
-uniform sampler2D edgeTex;  //edgetex 里面第一位写是否是edge,234位写的是位置信息// 分两次渲染，分布传入x方向的prog
+uniform sampler2D edgeTex;  //edgetex 里面第一位写是否是edge,234位写的是位置信息// 分两次渲染，分布传入x方向的prog 传入的是m_progFbo
 uniform sampler2D posTex;
 uniform vec2 resolution;
 uniform int isVertical;
@@ -79,12 +79,15 @@ void emitVolume(vec3 point1, vec2 targetTc)
 	vec3 point2 = texture2D(edgeTex,targetTc).yzw;
 	
 	const float farDis = 150;
+	const float nearDis =0.0;
 	vec3 tex1 = point1 + farDis* normalize(point1 - eocCameraPos);
 	vec3 tex2 = point2 + farDis* normalize(point2 - eocCameraPos);
+	vec3 nearPoint1 = point1 + nearDis* normalize(point1 - eocCameraPos);
+	vec3 nearPoint2 = point2 + nearDis* normalize(point2 - eocCameraPos);
 			emitVertex(tex1);
 			emitVertex(tex2);
-			emitVertex(point1);
-			emitVertex(point2);
+			emitVertex(nearPoint1);
+			emitVertex(nearPoint2);
 			EndPrimitive();
 }
 

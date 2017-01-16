@@ -131,7 +131,8 @@ __device__ bool rayIntersertectTriangle(float3 origin, float3 directionN, float3
 		*pIntersectWorld3 = lineIntersect;
 		*pLineIntersect = lineIntersect;
 		isOnrTiangle = true;
-		//printf("linar(%f,%f,%f)\n", ration.x, ration.y, ration.z);
+		printf("dotValue:%f\n", dot(n, directionN));
+		printf("linar(%f,%f,%f)\n", ration.x, ration.y, ration.z);
 		return  0 < ration.x && ration.x <= 1 && 0 < ration.y && ration.y <= 1 && 0 < ration.z && ration.z <= 1;
 	}
 	
@@ -140,6 +141,7 @@ __device__ int2 nearestTc(float2 tc)
 {
 	return make_int2(tc.x, tc.y);//直接进行int转换，因为减去0.5+0.5
 }
+//映射到扭曲空间
 __device__ float4 colorTextreNorTc(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth,d_imageHeight);
@@ -147,7 +149,7 @@ __device__ float4 colorTextreNorTc(float2 tc)
 	int index = mapTx.y * d_imageWidth + mapTx.x;
 	int mappedX = (int)(d_map_buffer[index].x+0.5);
 
-	//printf("searched tc:(%d,%f),z:(%f)\n", mappedX, nonNorTc.y, tex2D(cudaColorTex, nonNorTc.x, nonNorTc.y).z);
+	//printf("mapped tc:(%d,%f),z:(%f)\n", mappedX, nonNorTc.y, tex2D(optixColorTex, nonNorTc.x, nonNorTc.y).z);
 	return tex2D(optixColorTex, mappedX, nonNorTc.y);
 }
 __device__ int getNoteIndex(float2 tc)
@@ -344,7 +346,7 @@ __global__ void countRowKernel(int kernelWidth, int kernelHeight)
 	int y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
 	if (y > kernelHeight)
 		return;
-	//if (y != 807)
+	//if (y != 838)
 	//	return;
 	int arrayNum = y;
 	int accumNum = 0;
@@ -506,7 +508,7 @@ __global__ void renderToTexutreTop(int kernelWidth, int kernelHeight)
 		//printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
 
 		texEnd = currentNote.endIndex;
-		span = currentNote.endIndex - currentNote.beginIndex;
+		span = currentNote.endIndex - currentNote.beginIndex + 1;
 		leftEdgeIndex = currentNote.leftEdge;
 		fillBegin = texBegin + acuumPixel;
 		fillEnd = texEnd + acuumPixel;
@@ -569,8 +571,10 @@ __device__ void FillSpan(int beginX, int endX, int y, float2 beginUv, float2 end
 		int index = y*d_outTextureWidth + x;
 		float uvx = beginUv.x + (endUv.x - beginUv.x)*(x - beginX) / (top - beginX);
 		d_cudaTexture[index] = tex2D(cudaColorTex, uvx, beginUv.y);
+		//printf("write uv(%f,%f)\n",uvx,beginUv.y);
 		//记录映射关系
 		int originMappos = y*d_imageWidth + *accumIndexX;
+		//printf("x:%d,mappedPos:%d\n", x, *accumIndexX);
 		d_map_buffer[originMappos].x = x;
 		*accumIndexX += 1;
 	}
@@ -581,8 +585,8 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	int y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
 	if (y > kernelHeight)
 		return;
-	//if (y != 512)
-    //	return;
+	//if (y != 838)
+    //  	return;
 	int listIndex = y;
 	int rowLength = d_imageWidth;
 	ListNote currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
@@ -608,10 +612,10 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 
 		int noteIndex = currentNote.nextPt;
 		currentNote = d_listBuffer[currentNote.nextPt];
-		//printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
+	//	printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
 
 		texEnd = currentNote.endIndex;
-		span = currentNote.endIndex - currentNote.beginIndex;
+		span = currentNote.endIndex - currentNote.beginIndex +1 ;
 		leftEdgeIndex = currentNote.leftEdge;
 		fillBegin = texBegin + acuumPixel;
 		fillEnd = texEnd + acuumPixel;
@@ -887,17 +891,17 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 	{
 		float ratio = getRatioInSpan(beforePos, endPos, d_modelViewRight, lineIntersectPos);
 		float3 reversePoint3 = projective_interpo(beforePos, endPos, d_modelViewRight, ratio,1);
-		//printf("reversePoint3:(%f,%f,%f)\n", reversePoint3.x, reversePoint3.y, reversePoint3.z);
+		printf("reversePoint3:(%f,%f,%f)\n", reversePoint3.x, reversePoint3.y, reversePoint3.z);
 		float occludedTcX = currentNote.beginIndex + (currentNote.endIndex - currentNote.beginIndex)* ( ratio);
-		//printf("ratio:%f,beginIndex:%d,endIndex:%d,occludedTcX:%f\n", ratio, currentNote.beginIndex, currentNote.endIndex, occludedTcX);
+		printf("ratio:%f,beginIndex:%d,endIndex:%d,occludedTcX:%f\n", ratio, currentNote.beginIndex, currentNote.endIndex, occludedTcX);
 		float2 imageTc = make_float2((occludedTcX + 0.5) / d_imageWidth, localTc.y);
 		float4 color;
-		//printf("intersect imageTc:(%f,%f)\n", imageTc.x*d_imageWidth, imageTc.y* d_imageHeight);
+		printf("intersect imageTc:(%f,%f)\n", imageTc.x*d_imageWidth, imageTc.y* d_imageHeight);
 		if (canGetMappedPosition(imageTc, &color))
 		{
 			if (isOntriagle)
 			{
-				//printf("isOntriangle");
+				printf("isOntriangle");
 				*poc = color;
 				return 1;
 			}
@@ -1014,7 +1018,7 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 				if (isTracingEdge(lastTc))
 				{
 					int stepY  = abs(interval.y) / d_mapScale.y + 1;
-					//printf("interval:(%f,%f),StepY:StepN (%d,%d),gap:%f\n", interval.x, interval.y, stepY, stepN, (float)stepN / stepY);
+					printf("interval:(%f,%f),StepY:StepN (%d,%d),gap:%f\n", interval.x, interval.y, stepY, stepN, (float)stepN / stepY);
 					while(isOccluedeArea(tc))
 					{
 						if( isIntersectNote(posW, directionW, d_eocPos, tc, make_float2(projStart.x, projStart.y), interval, &oc))
@@ -1048,8 +1052,8 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
- 	//if (x != 510 || y != 512)
-	//	return;
+ 	if (x != 434 || y != 824)
+		return;
 	//printf("test:x%d,y:%d\n", x, y);
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
@@ -1061,7 +1065,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	float4 outColor;
 	if (intersectTexRay(beginPoint,viewDirection,outColor))
 	{
-	//	printf("here outcolor(%f,%f,%f,%f)\n", outColor.x, outColor.y, outColor.z, outColor.w);
+		//printf("here outcolor(%f,%f,%f,%f)\n", outColor.x, outColor.y, outColor.z, outColor.w);
 		d_cuda_construct_texture[index] = make_float4(outColor.x, outColor.y, outColor.z,1);//tex2D(cudaColorTex, x, y);
 	}
 	else

@@ -69,7 +69,15 @@ __device__ float3 getImagePos(float2 tc)
 RT_PROGRAM void shadow_request()
 {
 	float2 tc = make_float2(launch_index.x, launch_index.y) / resolution;
-	float4 textValue = tex2D(request_texture, launch_index.x, launch_index.y);// texture x 通道存储的是前后面的dis信息
+	float4 textValue = tex2D(request_texture, launch_index.x + 0.5, launch_index.y + 0.5);// texture x 通道存储的是前后面的dis信息
+	/*if (launch_index.y == 838)
+	{
+		result_buffer[launch_index] = make_float4(1,1,0, 1);
+		return;
+
+	}
+	result_buffer[launch_index] = textValue;
+	return;*/
 	if (textValue.x >= 1.0)
 	{
 		float3 targetPos = make_float3(textValue.y, textValue.z, textValue.w);

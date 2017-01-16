@@ -86,7 +86,7 @@ void main()
 	FragColor0.xyz = pWorldPos.xyz;
 	return;*/
 	vec3 gBufferPos = texture2D(posTex,ndc).xyz;
-	if(length(gBufferPos-cameraPos)>length(pWorldPos-cameraPos))
+	if(length(gBufferPos-cameraPos) >length(pWorldPos-cameraPos) + 0.001)
 	{
 	discard	;
 	}
