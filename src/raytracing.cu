@@ -50,6 +50,7 @@ rtDeclareVariable(optix::Matrix4x4, optixModelView, , );
 struct PerRayData_shadow
 {
 	float3 attenuation;
+	float3 worldPos;
 	float t_hit;
 };
 
@@ -91,11 +92,11 @@ RT_PROGRAM void shadow_request()
 		rtTrace(reflectors, ray, prd);
 		result_buffer[launch_index] = make_float4(prd.attenuation,1);
 		result_buffer[launch_index].z =( result_buffer[launch_index].z +3 )/4;
-		float3 worldPos = ray_origin + ray_direction*prd.t_hit;
+		float3 worldPos = prd.worldPos;
 		float3 rightCameraToWorldPos = worldPos - eoc_eye_right_pos;
 		float dis = dot(rightCameraToWorldPos, rightND);
 		float4 temp = make_float4(worldPos, 1)*rightModelView;
-		result_buffer[launch_index].w = length(rightCameraToWorldPos);
+		result_buffer[launch_index].w = -temp.z;
 		position_buffer[launch_index] = make_float4(worldPos,1);
 		return;
 	}

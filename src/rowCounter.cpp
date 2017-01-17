@@ -46,11 +46,12 @@ void RowCounter::init()
 	m_posCudaTex->set(pGbuffer->getTexture(1), m_width, m_height, pos_t);
 	m_posCudaTex->init();
 
+
 	m_initArray = new CudaPboResource();
 	m_initArray->set(1, m_height, list_e);
 	m_initArray->init();
 	m_OutTex = new CudaPboResource();
-	m_OutTex->set(ROWLARGER*m_width, m_height, float4_t);
+	m_OutTex->set(ROWLARGER*m_width, m_height, to_optix_t);
 	m_OutTex->init();
 	m_topOutTex = new CudaPboResource();
 	m_topOutTex->set(ROWLARGER*m_width, ROWLARGER*m_height, top_float4_t);

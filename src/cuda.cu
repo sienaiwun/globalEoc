@@ -2,6 +2,17 @@
 #include <helper_math.h>
 #include <nvMatrix.h>
 #include "Camera.h"
+
+#ifndef max
+#define max( a, b ) ( ((a) > (b)) ? (a) : (b) )
+#endif
+
+
+
+#ifndef min
+#define min( a, b ) ( ((a) < (b)) ? (a) : (b) )
+#endif
+
 #define FLT_MAX 99999.9
 texture<float4, 2, cudaReadModeElementType> cudaEdgeTex;//记录的是Edge,edge里面x记录x的sobal,edge里面y记录y的sobal
 texture<float4, 2, cudaReadModeElementType> cudaOccuderTex;
@@ -9,6 +20,7 @@ texture<float4, 2, cudaReadModeElementType> cudaTopOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaColorTex;
 texture<float4, 2, cudaReadModeElementType> cudaPosTex;
 texture<float4, 2, cudaReadModeElementType> optixColorTex;
+texture<float4, 2, cudaReadModeElementType> posBlendTex;
 cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
 typedef enum {
 	isVolumn,
@@ -96,7 +108,9 @@ __host__ __device__ void MutiMatrix(float* src, float* matrix, float* r)
 		}
 
 }
-__device__ bool rayIntersertectTriangle(float3 origin, float3 directionN, float3 cameraPos, float3 edgePoint1, float3 edgePoint2, float3* pIntersectWorld3, float3* pLineIntersect,bool& isOnrTiangle)
+__device__ float getRatioInSpan(float3 beginPos, float3 endPos, float* p_modelView, float3 testPos);
+__device__ float3 projective_interpo(float3 beginPos, float3 endPos, float* p_modelView, float ratio, int print );
+__device__ bool rayIntersertectTriangle(float3 origin, float3 directionN, float3 cameraPos, float3 edgePoint1/*beginPos*/, float3 edgePoint2/*endPos*/, float* modelView_float, float3* pIntersectWorld3, float3* pLineIntersect, bool& isOnrTiangle, float& proj_ratio,float3& reversePoint3)
 {
 	//printf("origin:(%f,%f,%f)\n", origin.x, origin.y, origin.z);
 	//printf("directionN:(%f,%f,%f)\n", directionN.x, directionN.y, directionN.z);
@@ -105,37 +119,44 @@ __device__ bool rayIntersertectTriangle(float3 origin, float3 directionN, float3
 	const float3 e1 = cameraPos - edgePoint2;
 	const float3 e2 = edgePoint2 - edgePoint1;
 	const float3 n = normalize(cross(e1, e0));
-	float3 toIntersection;
-	if (0)
+	float3 toIntersection, ratio3, lineIntersect;
+	if (1)
 	{
 		toIntersection = directionN * dot(cameraPos - origin, n) / dot(n, directionN);
 		const float3 intersectPos = origin + toIntersection;
 		const float3 lineNormal2 = normalize(cross(normalize(e2), n));
 		const float3 tolineIntersectPoint = (intersectPos - cameraPos)* dot(edgePoint1 - cameraPos, lineNormal2) / dot(intersectPos - cameraPos, lineNormal2);
-		const float3  lineIntersect = cameraPos + tolineIntersectPoint;
-		float3 ration = (lineIntersect - edgePoint1) / (edgePoint2 - edgePoint1);
-		*pIntersectWorld3 = intersectPos;
-		*pLineIntersect = lineIntersect;
+		lineIntersect = cameraPos + tolineIntersectPoint;
 		isOnrTiangle = false;
-		return  0 < ration.x && ration.x <= 1 && 0 < ration.y && ration.y <= 1 && 0 < ration.z && ration.z <= 1;
-
+		*pIntersectWorld3 = intersectPos;
 	}
 	else
 	{
 		const float3 lineNormal2 = normalize(cross(normalize(e2), n));
 		const float3 tolineIntersectPoint = directionN* dot(edgePoint1 - origin, lineNormal2) / dot(directionN, lineNormal2);
 		//printf("tolineIntersectPoint:(%f,%f,%f)\n", tolineIntersectPoint.x, tolineIntersectPoint.y, tolineIntersectPoint.z);
-		const float3  lineIntersect = origin + tolineIntersectPoint;
-		float3 ration = (lineIntersect - edgePoint1) / (edgePoint2 - edgePoint1);
-		//printf("intersect:(%f,%f,%f)\n", lineIntersect.x, lineIntersect.y, lineIntersect.z);
-		*pIntersectWorld3 = lineIntersect;
-		*pLineIntersect = lineIntersect;
+		lineIntersect = origin + tolineIntersectPoint;
 		isOnrTiangle = true;
-		printf("dotValue:%f\n", dot(n, directionN));
-		printf("linar(%f,%f,%f)\n", ration.x, ration.y, ration.z);
-		return  0 < ration.x && ration.x <= 1 && 0 < ration.y && ration.y <= 1 && 0 < ration.z && ration.z <= 1;
+		*pIntersectWorld3 = lineIntersect;
+		
 	}
-	
+	//printf("intersect:(%f,%f,%f)\n", lineIntersect.x, lineIntersect.y, lineIntersect.z);
+
+	*pLineIntersect = lineIntersect;
+	ratio3 = (lineIntersect - edgePoint1) / (edgePoint2 - edgePoint1);
+	//printf("edge1:%f,%f,%f, edge2:%f,%f,%f\n", edgePoint1.x, edgePoint1.y, edgePoint1.z, edgePoint2.x, edgePoint2.y, edgePoint2.z);
+	proj_ratio = getRatioInSpan(edgePoint1, edgePoint2, modelView_float, lineIntersect);
+	//printf("linar(%f,%f,%f),rePorj_value:%f\n", ratio3.x, ratio3.y, ratio3.z, proj_ratio);
+
+	//printf("proj_ratio:%f\n", proj_ratio);
+	reversePoint3 = projective_interpo(edgePoint1, edgePoint2, d_modelViewRight, proj_ratio, 1);
+
+	if (0 < ratio3.x && ratio3.x <= 1 && 0 < ratio3.y && ratio3.y <= 1 && 0 < ratio3.z && ratio3.z <= 1)
+	{
+			//printf("dotValue:%f\n", dot(n, directionN));
+			return TRUE;
+	}
+	return FALSE;
 }
 __device__ int2 nearestTc(float2 tc)
 {
@@ -184,13 +205,31 @@ __device__ bool canGetMappedPosition(float2 tc,float4* poc)
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
 	int2 mapTx = nearestTc(nonNorTc);
 	int index = mapTx.y * d_imageWidth + mapTx.x;
-	int mappedY = (int)(d_map_buffer[index].y+ 0.5);
-	if (mappedY < 1)
+	int mappedX= (int)(d_map_buffer[index].y+ 0.5);
+	if (mappedX < 1)
 	{
 		return false;
 	}
 	//printf("mapped coord:(%d,%d)\n", mappedY, mapTx.y);
-	*poc = tex2D(optixColorTex, mappedY, nonNorTc.y);
+	*poc = tex2D(optixColorTex, mappedX, nonNorTc.y);
+	return true;
+
+}
+__device__ bool noMappedPosition(float2 tc, float4* poc)
+{
+	float2 nonNorTc = tc;
+	int2 mapTx = nearestTc(nonNorTc);
+	int index = mapTx.y * d_imageWidth + mapTx.x;
+	int mappedX = (int)(d_map_buffer[index].y + 0.5);
+	
+	//printf("mapped coord:(%d,%d)\n", mappedX, mapTx.y);
+	*poc = tex2D(optixColorTex, mappedX, nonNorTc.y);
+	if (mappedX < 1)
+	{
+		return false;
+	}
+	//printf("%f,%f,%f,%f\n", poc->x, poc->y, poc->z, poc->w);
+
 	return true;
 
 }
@@ -231,13 +270,16 @@ __device__ float getRatioInSpan(float3 beginPos, float3 endPos, float* p_modelVi
 	temp = MutiMatrixN(p_modelView, make_float4(testPos.x, testPos.y, testPos.z, 1));
 	z3 = temp.z;
 	float real_ratio = (repo(z1) - repo(z3)) / (repo(z1) - repo(z2));
-	/*printf("beginPos:(%f,%f,%f)\n", beginPos.x, beginPos.y, beginPos.z);
+	/*
+	printf("in projection\n");
+	printf("beginPos:(%f,%f,%f)\n", beginPos.x, beginPos.y, beginPos.z);
 	printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
 	printf("testPos:(%f,%f,%f)\n", testPos.x, testPos.y, testPos.z);
 	printf("z1:%f,z2:%f,z3:%f\n",z1,z2,z3);
 	printf("repo z1:%f,z2:%f,z3:%f\n", repo(z1), repo(z2), repo(z3));
-	printf("ration:%f\n", real_ratio);
 	*/
+	printf("ration:%f\n", real_ratio);
+	
 	return real_ratio;
 	return (z3 - z2) / (z1 - z2);
 }
@@ -761,7 +803,7 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 		checkCudaErrors(cudaMemcpyToSymbol(d_imageWidth, &w, sizeof(int)));
 		checkCudaErrors(cudaMemcpyToSymbol(d_imageHeight, &h, sizeof(int)));
 		checkCudaErrors(cudaBindTextureToArray(cudaPosTex, tmpcudaArray, channelDesc));
-		cudaPosTex.filterMode = cudaFilterModePoint;
+		cudaPosTex.filterMode = cudaFilterModeLinear;
 
 	}
 	else if (occluderTopbuffer_t == pResouce->getType())
@@ -773,6 +815,11 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 	{
 		checkCudaErrors(cudaBindTextureToArray(optixColorTex, tmpcudaArray, channelDesc));
 		optixColorTex.filterMode = cudaFilterModePoint;
+	}
+	else if (posBlend_t == pResouce->getType())
+	{
+		checkCudaErrors(cudaBindTextureToArray(posBlendTex, tmpcudaArray, channelDesc));
+		posBlendTex.filterMode = cudaFilterModeLinear;
 	}
 }
 
@@ -787,7 +834,7 @@ extern "C" void cudaRelateArray(CudaPboResource * pResource)
 		checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&cuda_PBO_Buffer, &numBytes, *pCudaTex));
 		checkCudaErrors(cudaMemcpyToSymbol(d_cudaPboBuffer, &cuda_PBO_Buffer, sizeof(ListNote*)));
 	}
-	else if (float4_t == pResource->getType())
+	else if (to_optix_t == pResource->getType())
 	{
 		checkCudaErrors(cudaMemcpyToSymbol(d_outTextureWidth, &w, sizeof(int)));
 		checkCudaErrors(cudaMemcpyToSymbol(d_outTextureHeigh, &h, sizeof(int)));
@@ -863,7 +910,7 @@ __device__ float3 toFloat3(float4 inValue)
 {
 	return make_float3(inValue.x / inValue.w, inValue.y / inValue.w, inValue.z / inValue.w);
 }
-__device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos, float2 tc, float2 projStart, float2 interval, float4* poc)
+__device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos, float2 tc, float2 projStart, float2 interval ,float* modelView,float4* poc)
 {
 	//printf("test tc:(%f,%f)\n", tc.x*d_imageWidth, tc.y*d_imageHeight);
 	float2 d_mapScale = 1.0 / make_float2(d_construct_width, d_construct_height);
@@ -877,22 +924,92 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 
 	int texEnd = currentNote.endIndex;  // 这个是右边边界-的值
 	//printf("texEnd:%d\n",texEnd);
-	float2 beforeEdgeUv = make_float2(texEnd + 0.5, localTc.y*d_imageHeight);
+	int yIndex = floor(localTc.y*d_imageHeight);
+	float2 beforeEdgeUv = make_float2(texEnd + 0.5, yIndex+0.5);
+	float2 endEdgeUv = make_float2(texEnd + 1 + 0.5, yIndex + 0.5);
 	float3 beforePos = make_float3(tex2D(cudaPosTex, beforeEdgeUv.x, beforeEdgeUv.y));
-	//printf("beforeEdgeUv.x:%f\n", beforeEdgeUv.x);
-	float2 endEdgeUv = make_float2(texEnd + 1+0.5, localTc.y*d_imageHeight);
+	//printf("beforeEdgeUv:%f,%f\n", beforeEdgeUv.x, beforeEdgeUv.y);
 	float3 endPos = make_float3(tex2D(cudaPosTex, endEdgeUv.x, endEdgeUv.y));
 	float3 lineIntersectPos, worldIntersectPos;
 	bool isOntriagle;
-	//printf("endEdgeUv.x:%f\n", endEdgeUv.x);
+	float ratio_proj;
+	//printf("endEdgeUv:%f,%f\n", endEdgeUv.x, endEdgeUv.y);
 	//printf("beforePos:(%f,%f,%f)\n", beforePos.x, beforePos.y, beforePos.z);
 	//printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
-	if (rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforePos, endPos, &worldIntersectPos, &lineIntersectPos, isOntriagle))
+	//printf("rightCam:%f,%f,%f\n", d_eocPos.x, d_eocPos.y, d_eocPos.z);
+	float3 reversePoint3 ;
+	//rayIntersertectTriangle(float3 origin, float3 directionN, float3 cameraPos, float3 edgePoint1/*beginPos*/, float3 edgePoint2/*endPos*/, float* modelView_float, float3* pIntersectWorld3, float3* pLineIntersect, bool& isOnrTiangle, float& proj_ratio, float3& reversePoint3)
+	if (rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforePos, endPos, d_modelViewRight, &worldIntersectPos, &lineIntersectPos, isOntriagle, ratio_proj, reversePoint3))
 	{
-		float ratio = getRatioInSpan(beforePos, endPos, d_modelViewRight, lineIntersectPos);
-		float3 reversePoint3 = projective_interpo(beforePos, endPos, d_modelViewRight, ratio,1);
-		printf("reversePoint3:(%f,%f,%f)\n", reversePoint3.x, reversePoint3.y, reversePoint3.z);
-		float occludedTcX = currentNote.beginIndex + (currentNote.endIndex - currentNote.beginIndex)* ( ratio);
+#define GAP 0.01
+		bool isUpD = interval.y > 0;
+		//printf("isUp:%s\n", isUpD == FALSE ? "FALSE" : "TRUE");
+		float exitY, enterY;
+		if (isUpD)
+		{
+			exitY = yIndex + 1.0 - GAP;
+			enterY = yIndex + GAP;
+		}
+		else
+		{
+			 enterY = yIndex + 1.0 - GAP;
+			 exitY = yIndex + GAP;
+		}
+		float2 beforeEnterTc = make_float2(texEnd + 0.5, enterY);                 //left
+		float3 beforeEntorPos = make_float3(tex2D(cudaPosTex, beforeEnterTc.x, beforeEnterTc.y));
+		float2 endEntorTc = make_float2(texEnd + 1 + 0.5, enterY);
+		float3 endEntorPos = make_float3(tex2D(cudaPosTex, endEntorTc.x, endEntorTc.y));
+		float2 beforeExitTc = make_float2(texEnd + 0.5, exitY);
+		float3 beforeExitPos = make_float3(tex2D(cudaPosTex, beforeExitTc.x, beforeExitTc.y));
+		float2 endExitTc = make_float2(texEnd + 1 + 0.5, exitY);
+		float3 endExitPos = make_float3(tex2D(cudaPosTex, endExitTc.x, endExitTc.y));
+		float enter_projRatio, exit_projRatiok;
+		float3 enterReservedPos, exitReservedPos, _;
+		bool f_;
+		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeEntorPos, endEntorPos, d_modelViewRight, &enterReservedPos, &_, f_, enter_projRatio, _);
+		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelViewRight, &exitReservedPos, &_, f_, exit_projRatiok, _);
+		//printf("enterY,exitY:(%f,%f)\n", enterY, exitY);
+		//printf("enterReservedPos:%f,%f,%f\n", enterReservedPos.x, enterReservedPos.y, enterReservedPos.z);
+		//printf("exitReservedPos:%f,%f,%f\n", exitReservedPos.x, exitReservedPos.y, exitReservedPos.z);
+		float4 temp = MutiMatrixN(modelView, make_float4(enterReservedPos, 1));
+		float enterZ = -temp.z;
+		temp = MutiMatrixN(modelView, make_float4(exitReservedPos, 1));
+		float exitZ = -temp.z;
+	
+		float4 color;
+		int texBegin = currentNote.beginIndex ;
+		int span = texEnd + 1 - texBegin;
+		float add = (enter_projRatio > exit_projRatiok) ? -1.0 : 1.0;
+		float enterP =  min(1, max(0, enter_projRatio));
+		float exitP = min(1, max(0, exit_projRatiok));
+		float dpdx = (repo(exitZ) - repo(enterZ)) / (exit_projRatiok - enter_projRatio);
+		//printf("tratio: %f, enter_projRatio:%f ,exit_projRatiok :%f \n", ratio_proj, enter_projRatio, exit_projRatiok);
+		//printf("enterZ: %f, exitZ:%f ,dpdx :%f \n", enterZ, exitZ, dpdx);
+		//printf("add:%f", add);
+		for (float tex = texBegin + span* enterP; tex < texBegin + span* exitP; tex += add)
+		{
+			float ratioOneD = (tex - texBegin) / span;
+			//printf("repo(enterZ):%f,second:%f,d:%f\n", repo(enterZ), (ratioOneD - enter_projRatio)*dpdx, repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
+			float currentZ = repo(repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
+			//printf("temp:%f\n", (ratioOneD - enter_projRatio));
+			//printf("ratioOneD:%f,test tx:%f,currentZ:%f\n", ratioOneD, tex, currentZ);
+
+				
+			if (noMappedPosition(make_float2(tex, yIndex + 0.5), &color))
+			{
+				float zOnTex = color.w;
+				if (currentZ > zOnTex)
+				{
+					*poc = color;
+					return 1;
+
+				}
+			}
+		}
+	
+#undef GAP
+		/*printf("reversePoint3:(%f,%f,%f)\n", reversePoint3.x, reversePoint3.y, reversePoint3.z);
+		float occludedTcX = currentNote.beginIndex + (currentNote.endIndex - currentNote.beginIndex)* (ratio_proj);
 		printf("ratio:%f,beginIndex:%d,endIndex:%d,occludedTcX:%f\n", ratio, currentNote.beginIndex, currentNote.endIndex, occludedTcX);
 		float2 imageTc = make_float2((occludedTcX + 0.5) / d_imageWidth, localTc.y);
 		float4 color;
@@ -914,7 +1031,7 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 				return 1;
 
 			}
-		}
+		}*/
 	}
 }
 
@@ -1021,7 +1138,7 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 					printf("interval:(%f,%f),StepY:StepN (%d,%d),gap:%f\n", interval.x, interval.y, stepY, stepN, (float)stepN / stepY);
 					while(isOccluedeArea(tc))
 					{
-						if( isIntersectNote(posW, directionW, d_eocPos, tc, make_float2(projStart.x, projStart.y), interval, &oc))
+						if( isIntersectNote(posW, directionW, d_eocPos, tc, make_float2(projStart.x, projStart.y), interval,d_modelViewRight, &oc))
 						{
 							return 1;
 						}
@@ -1052,8 +1169,8 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
- 	if (x != 434 || y != 824)
-		return;
+ 	//if (x != 438 || y != 640)
+	//	return;
 	//printf("test:x%d,y:%d\n", x, y);
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);

@@ -20,6 +20,7 @@ __device__ float  myfmax(float a, float b) {
 struct PerRayData_shadow
 {
 	float3 attenuation;
+	float3 worldPos;
 	float t_hit;
 };
 rtDeclareVariable(PerRayData_shadow, prd_shadow, rtPayload, );
@@ -36,6 +37,6 @@ RT_PROGRAM void closest_hit_radiance()
 	float ka = 0.2;
 	float3 color = (kd + ka)*make_float3(diffuse_Color.x, diffuse_Color.y, diffuse_Color.z);
 
-
+	prd_shadow.worldPos = hit_point;
 	prd_shadow.attenuation = color;;
 }

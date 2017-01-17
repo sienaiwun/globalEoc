@@ -111,6 +111,10 @@ public:
 	{
 		return m_eocTopCam.getD();
 	}
+	inline Fbo getPosBlendFbo()
+	{
+		return m_posBlendFbo;
+	}
 private:
 	bool m_debugSwap;
 	EocCamera m_eocRightCam;
@@ -130,6 +134,7 @@ private:
 	Fbo m_renderFbo;
 	Fbo m_edgeFbo;
 	Fbo m_progFbo;
+	Fbo m_posBlendFbo;
 	Fbo m_gbufferFbo;
 	Fbo m_gbufferRightEocFbo;
 	Fbo m_gbufferTopEocFbo;

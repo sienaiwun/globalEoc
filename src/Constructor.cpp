@@ -13,6 +13,9 @@ void Constructor::init()
 	m_optixColorResource->set(m_optixColorTex, m_optixWidth, m_optixHeight, optixColorTex_t);
 	m_optixColorResource->init();
 
+	m_posBlendTex = new CudaTexResourse();
+	m_posBlendTex->set(pPosBlendFbo->getTexture(0), m_width, m_height, posBlend_t);
+	m_posBlendTex->init();
 
 }
 void Constructor::render(glslShader & shader, textureManager& manager)
@@ -28,9 +31,11 @@ void Constructor::construct()
 	m_constuctResource->map();
 	mapConstruct(m_pNaviCam);
 	m_optixColorResource->map();
+	m_posBlendTex->map();
 
 	cuda_Construct(m_width,m_height);
 
+	m_posBlendTex->unmap();
 	m_optixColorResource->unmap();
 	m_constuctResource->unMap();
 	CHECK_ERRORS();

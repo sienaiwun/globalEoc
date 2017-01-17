@@ -41,14 +41,19 @@ public:
 		m_optixWidth = optixWidth;
 		m_optixHeight = optixHeight;
 	}
+	inline void setBlendPosBuffer(Fbo * pFbo)
+	{
+		pPosBlendFbo = pFbo;
+	}
 private:
 	Scene* m_pScene;
 	GLuint m_getTex,m_optixColorTex;
 	int m_width, m_height,m_optixWidth,m_optixHeight;
 	Fbo m_construct_Fbo;
 	Camera * m_pNaviCam;
+	Fbo * pPosBlendFbo;
 	CudaPboResource * m_constuctResource;
-	CudaTexResourse * m_optixColorResource;
+	CudaTexResourse * m_optixColorResource, *m_posBlendTex;
 
 };
 #endif

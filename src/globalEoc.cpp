@@ -33,6 +33,8 @@ EOCrender::EOCrender(int w, int h) :m_height(h), m_width(w), m_pScene(NULL)
 	m_edgeFbo.init();
 	m_progFbo = Fbo(2, m_width, m_height);
 	m_progFbo.init();
+	m_posBlendFbo = Fbo(1, m_width, m_height);
+	m_posBlendFbo.init();
 
 	m_gbufferRightEocFbo = Fbo(1, m_width, m_height);
 	m_gbufferRightEocFbo.init();
@@ -342,13 +344,12 @@ void EOCrender::render(textureManager & manager)
 
 
 	
-	m_blendShader.setBuffer1(&m_gbufferFbo);
-	m_blendShader.setBuffer2(&m_occludedTopBuffer);
-	m_renderFbo.begin();
+	m_blendShader.setGbuffer(&m_gbufferFbo);
+	m_blendShader.setProgBuffer(&m_progFbo);
+	m_posBlendFbo.begin();
 	myGeometry::drawQuad(m_blendShader);
-	//m_renderFbo.SaveBMP("temp.bmp", 0);
 	//m_renderFbo.SaveBMP("test2.bmp", 0);
-	m_renderFbo.end();
+	m_posBlendFbo.end();
 	
 	//for visualization
 	m_gbufferRightEocFbo.begin();

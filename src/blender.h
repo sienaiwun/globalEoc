@@ -19,19 +19,19 @@ public:
 	virtual void end();
 	virtual void setMaterial(const GLMmaterial & meterial, textureManager & manager);
 
-	inline void setBuffer1(Fbo * p)
+	inline void setGbuffer(Fbo * p)
 	{
-		pFbo1 = p;
+		pGbuffer = p;
 	}
-	inline void setBuffer2(Fbo * p)
+	inline void setProgBuffer(Fbo * p)
 	{
-		pFbo2 = p;
+		pProgBuffer = p;
 	}
 
 
 	inline void setParemeter();
 private:
-	GLuint color1Slot, color2Slot;
-	Fbo *pFbo1, *pFbo2;
+	GLuint gbufferSlot, progSlot;
+	Fbo *pGbuffer, *pProgBuffer;
 };
 #endif

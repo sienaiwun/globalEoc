@@ -31,6 +31,7 @@ enum cudaTexType
 	edgebuffer_t,
 	color_t,
 	pos_t,
+	posBlend_t,
 };
 
 
@@ -99,7 +100,7 @@ private:
 
 enum cudaPboType
 {
-	float4_t,
+	to_optix_t,
 	float2_t,
 	test_t,
 	construct_t,
@@ -116,7 +117,7 @@ class CudaPboResource
 public:
 	inline bool is_texture()
 	{
-		return m_type == float4_t || top_float4_t == m_type || construct_t == m_type;
+		return m_type == to_optix_t || top_float4_t == m_type || construct_t == m_type;
 	}
 	inline void set(int w, int h, cudaPboType t)
 	{

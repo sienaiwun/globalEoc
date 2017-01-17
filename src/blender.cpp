@@ -5,8 +5,8 @@
 void BlendShader::init()
 {
 	m_loader.loadShader(m_vertexFileName.c_str(), 0, m_fragmentFileName.c_str());
-	color1Slot = m_loader.getUniform("color1Tex");
-	color2Slot = m_loader.getUniform("color2Tex");
+	gbufferSlot = m_loader.getUniform("posTex");
+	progSlot = m_loader.getUniform("progTex");
 	
 
 }
@@ -19,8 +19,8 @@ void BlendShader::setParemeter()
 void BlendShader::bindParemeter()
 {
 	
-	setShaderTex(color1Slot, pFbo1->getTexture(0));
-	setShaderTex(color2Slot, pFbo2->getTexture(0));
+	setShaderTex(gbufferSlot, pGbuffer->getTexture(1));
+	setShaderTex(progSlot, pProgBuffer->getTexture(0));
 	
 
 }

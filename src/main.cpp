@@ -145,6 +145,8 @@ void Init()
 	g_Consturctor.setNaveCam(&g_navi_Cam);
 	g_Consturctor.setScene(g_scene);
 	g_Consturctor.setOptixColorTex(pEoc->getOptixTex(), pEoc->getOptixWidth(), pEoc->getOptixHeight());
+	
+	g_Consturctor.setBlendPosBuffer(&pEoc->getPosBlendFbo());
 	g_Consturctor.init();
 	pEoc->render(texManager);
 
