@@ -20,6 +20,7 @@ void GbufferShader::setScene(Scene * pScene)
 {
 	glUniform3fv(m_lightPosBinding, 1, (float*)pScene->getLightPos());
 }
+static int objectId = 1;
 void GbufferShader::setGeomtryIndex(int i)
 {
 	glUniform1i(m_objectId, i);
@@ -34,6 +35,7 @@ void GbufferShader::begin()
 void GbufferShader::end()
 {
 	m_loader.DisUse();
+	objectId = 1;
 }
 
 void GbufferShader::setMaterial(const GLMmaterial & material, textureManager & manager)
@@ -42,6 +44,7 @@ void GbufferShader::setMaterial(const GLMmaterial & material, textureManager & m
 	CHECK_ERRORS();
 	int  texid = manager.getTexId(material.diffuse_map);
 	CHECK_ERRORS();
+	glUniform1i(m_objectId, objectId);
 //	printf("diffuse map:%s\n", material.diffuse_map);
 	if (texid > 0)
 	{
@@ -58,6 +61,7 @@ void GbufferShader::setMaterial(const GLMmaterial & material, textureManager & m
 	{
 		glUniform1i(m_hasTex, 0);
 	}
+	objectId++;
 	//if (material.ambient_map[0] == 'a');
 
 }

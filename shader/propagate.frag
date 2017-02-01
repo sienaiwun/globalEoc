@@ -70,7 +70,7 @@ bool isEdge(vec2 uv)
  {
 	if(!isEdge(uv))
 	{
-		color0.x= 1;
+		color0.x= texture2D(posTex,uv).w;
 		color0.yzw =  texture2D(posTex,uv).xyz;
 		return true;
 	}
@@ -80,7 +80,7 @@ bool isEdge(vec2 uv)
  {
 	if(!isEdge(uv))
 	{
-		color1.x = 1;
+		color1.x = texture2D(posTex,uv).w;
 		color1.yzw = texture2D(posTex,uv).xyz;
 		return true;
 	}

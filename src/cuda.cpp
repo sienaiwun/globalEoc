@@ -127,7 +127,7 @@ void CudaPboResource::generateTex()
 		
 		if (m_type == construct_t)
 		{
-			/*
+			
 			glEnable(GL_TEXTURE_2D);
 			BYTE *pTexture = NULL;
 			pTexture = new BYTE[m_width*m_height * 3];
@@ -143,7 +143,7 @@ void CudaPboResource::generateTex()
 			Fbo::SaveBMP("b.bmp", pTexture, m_width, m_height);
 
 			glBindTexture(GL_TEXTURE_2D, 0);
-			*/
+			
 		}
 
 

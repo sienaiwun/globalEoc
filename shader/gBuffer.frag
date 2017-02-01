@@ -37,7 +37,7 @@ void main()
 	float ka = 0.2;
 	FragColor0.xyz = diffuse*(kd+ka);
 	FragColor1.xyz = worldPos;
-	FragColor1.w = 1;
+	FragColor1.w = objectId;
 	FragColor2 = vec4(N,1);
 	FragColor0.x = min(0.98,FragColor0.x);
 	vec4 temp = modelView * vec4(worldPos,1.0);
