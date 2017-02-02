@@ -153,13 +153,19 @@ __device__ bool rayIntersertectTriangle(float3 origin, float3 directionN, float3
 	//printf("ratio3:%f,%f,%f\n", ratio3.x, ratio3.y, ratio3.z);
 	//printf("dotValue:%f\n", dot(n, directionN));
 	float lgap = 0.5 / noteSpan;
+	//printf("noteSpane:%f\n", noteSpan);
 	float lmin = 0 - lgap;
 	float lmax = 1 + lgap;
+	//printf("lmin,lmax:%f,%f\n", lmin, lmax);
 	if (lmin < ratio3.x && ratio3.x <= lmax && lmin < ratio3.y && ratio3.y <= lmax && lmin < ratio3.z && ratio3.z <= lmax)
 	{
+		//printf("touched\n");
 		return TRUE;
 	}
+
+	//printf("no touched\n");
 	return FALSE;
+
 }
 __device__ int2 nearestTc(float2 tc)
 {
@@ -933,10 +939,10 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 	float3 beforePos = make_float3(tex2D(cudaPosTex, beforeEdgeUv.x, beforeEdgeUv.y));
 	//printf("beforeEdgeUv:%f,%f\n", beforeEdgeUv.x, beforeEdgeUv.y);
 	float3 endPos = make_float3(tex2D(cudaPosTex, endEdgeUv.x, endEdgeUv.y));
-	float3 lineIntersectPos, worldIntersectPos;
+	float3 l_, w_;
 
 
-	bool isOntriagle;
+	bool is_;
 	float ratio_proj;
 	//printf("endEdgeUv:%f,%f\n", endEdgeUv.x, endEdgeUv.y);
 	//printf("beforePos:(%f,%f,%f)\n", beforePos.x, beforePos.y, beforePos.z);
@@ -944,7 +950,9 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 	//printf("rightCam:%f,%f,%f\n", d_eocPos.x, d_eocPos.y, d_eocPos.z);
 	float3 reversePoint3;
 	//rayIntersertectTriangle(float3 origin, float3 directionN, float3 cameraPos, float3 edgePoint1/*beginPos*/, float3 edgePoint2/*endPos*/, float* modelView_float, float3* pIntersectWorld3, float3* pLineIntersect, bool& isOnrTiangle, float& proj_ratio, float3& reversePoint3)
-	if (rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforePos, endPos, d_modelViewRight, span, &worldIntersectPos, &lineIntersectPos, isOntriagle, ratio_proj, reversePoint3))
+	
+	//(rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforePos, endPos, d_modelViewRight, span, &w_, &l_, is_, ratio_proj, reversePoint3));
+	
 	{
 #define GAP 0.01
 		bool isUpD = interval.y > 0;
@@ -971,7 +979,9 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 		float enter_projRatio, exit_projRatiok;
 		float3 enterReservedPos, exitReservedPos, _;
 		bool f_;
+		//printf("enter!!!!\n");
 		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeEntorPos, endEntorPos, d_modelViewRight, span, &enterReservedPos, &_, f_, enter_projRatio, _);
+		//printf("exit!!!!\n");
 		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelViewRight, span,&exitReservedPos, &_, f_, exit_projRatiok, _);
 		//printf("enterY,exitY:(%f,%f)\n", enterY, exitY);
 		//printf("enterReservedPos:%f,%f,%f\n", enterReservedPos.x, enterReservedPos.y, enterReservedPos.z);
@@ -1018,7 +1028,6 @@ __device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos
 		return 0;
 #undef GAP
 	}
-	printf("not touch\n");
 	return 0;
 }
 
@@ -1159,7 +1168,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
-	//if (x != 418 || y != 684)
+	//if (x != 414 || y != 551)
 	//	return;
 	//printf("test:x%d,y:%d\n", x, y);
 	const int index = y*kernelWidth + x;
