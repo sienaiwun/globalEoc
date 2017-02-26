@@ -170,6 +170,8 @@ void EOCrender::initOptix()
 
 		m_rtContext->setRayGenerationProgram(0, m_rtContext->createProgramFromPTXFile(RAYTRACINGPATH, "shadow_request"));
 		m_rtContext->setExceptionProgram(0, m_rtContext->createProgramFromPTXFile(RAYTRACINGPATH, "exception"));
+		m_rtContext->setMissProgram(0, m_rtContext->createProgramFromPTXFile(TEXTUREPATH, "miss"));
+
 		
 		myGeometry::p_rtContext = &m_rtContext;
 		m_pScene->setOptix(&m_rtContext);
@@ -208,7 +210,8 @@ void EOCrender::optixTracing()
 		m_rtContext["rightModelView"]->setMatrix4x4fv(false, p_right_Eoc_camera->getModelViewMat());
 		m_rtContext->launch(0, cudaTexWidth, cudaTexHeight);
 	}
-	catch (optix::Exception& e) {
+	catch (optix::Exception& e)
+	{
 		printf("%s\n", e.getErrorString().c_str());
 		exit(1);
 	}

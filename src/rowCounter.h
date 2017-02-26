@@ -47,7 +47,7 @@ private:
 	GLuint m_head_pointer_texture, m_head_pointer_initializer, m_atomic_counter_buffer, m_fragment_storage_buffer;
 	GLuint *m_data;
 	GLuint m_test;
-	CudaTexResourse *m_colorCudaTex, *m_edgeCudaTex, *m_occluderRightCudaTex, *m_posCudaTex, *m_occluderTopCudaTex;
+	CudaTexResourse *m_colorCudaTex, *m_edgeCudaTex, *m_occluderRightCudaTex, *m_posCudaTex, *m_normalCudaTex ,*m_occluderTopCudaTex;
 	CudaPboResource *m_initArray, *m_OutTex, *m_topOutTex;
 
 };

@@ -44,3 +44,11 @@ RT_PROGRAM void closest_hit_radiance()
 	prd_shadow.attenuation = color;
 	prd_shadow.worldPos = hit_point;
 }
+
+
+RT_PROGRAM void miss()
+{
+	prd_shadow.attenuation =  make_float3(0.0f, 0.5f, 0.0f);
+	prd_shadow.worldPos = make_float3(-1100.0f, -1100.0f, -1100.0f);
+	
+}

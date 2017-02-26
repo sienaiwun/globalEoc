@@ -93,7 +93,7 @@ void Init()
 {
 	glewInit();
 	if (!glewIsSupported(
-		"GL_VERSION_2_0 "
+		"GL_VERSION_2_0 "	
 		"GL_ARB_vertex_program "
 		"GL_ARB_fragment_program "
 		"GL_ARB_texture_float "

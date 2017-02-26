@@ -65,7 +65,15 @@ __device__ float3 getImagePos(float2 tc)
 	temp = temp / temp.w;
 	return make_float3(temp.x, temp.y, temp.z);
 }
-
+__device__ float chanelToRight(float3 worldPos)
+{ 
+	if (worldPos.x < -1000 && worldPos.y < -1000 && worldPos.z < -1000)
+		return -1000;
+	float3 rightCameraToWorldPos = worldPos - eoc_eye_right_pos;
+	float dis = dot(rightCameraToWorldPos, rightND);
+	float4 temp = make_float4(worldPos, 1)*rightModelView;
+	return -temp.z;
+}
 
 RT_PROGRAM void shadow_request()
 {
@@ -92,12 +100,8 @@ RT_PROGRAM void shadow_request()
 		rtTrace(reflectors, ray, prd);
 		result_buffer[launch_index] = make_float4(prd.attenuation,1);
 		result_buffer[launch_index].z =( result_buffer[launch_index].z +3 )/4;
-		float3 worldPos = prd.worldPos;
-		float3 rightCameraToWorldPos = worldPos - eoc_eye_right_pos;
-		float dis = dot(rightCameraToWorldPos, rightND);
-		float4 temp = make_float4(worldPos, 1)*rightModelView;
-		result_buffer[launch_index].w = -temp.z;
-		position_buffer[launch_index] = make_float4(worldPos,1);
+		result_buffer[launch_index].w = chanelToRight(prd.worldPos);
+		position_buffer[launch_index] = make_float4(prd.worldPos, 1);
 		return;
 	}
 	else  	if (textValue.x <= -1.0)

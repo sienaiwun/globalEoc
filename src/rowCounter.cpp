@@ -46,6 +46,10 @@ void RowCounter::init()
 	m_posCudaTex->set(pGbuffer->getTexture(1), m_width, m_height, pos_t);
 	m_posCudaTex->init();
 
+	m_normalCudaTex = new  CudaTexResourse();
+	m_normalCudaTex->set(pGbuffer->getTexture(2), m_width, m_height, normal_t);
+	m_normalCudaTex->init();
+
 
 	m_initArray = new CudaPboResource();
 	m_initArray->set(1, m_height, list_e);
@@ -80,12 +84,15 @@ void RowCounter::render(Camera *pCamera, Camera * pEocCam, Camera * pTopCamera)
 	m_colorCudaTex->map();
 	m_posCudaTex->map();
 	m_topOutTex->map();
+	m_normalCudaTex->map();
 
 	countRow(m_width, m_height, pCamera, pEocCam, pTopCamera);
 	m_colorCudaTex->unmap();
 	m_edgeCudaTex->unmap();
 	m_occluderRightCudaTex->unmap();
 	m_occluderTopCudaTex->unmap();
+	m_normalCudaTex->unmap();
+
 	m_posCudaTex->unmap();
 	m_initArray->unMap();
 	

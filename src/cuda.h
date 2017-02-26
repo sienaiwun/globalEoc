@@ -19,7 +19,8 @@
 class ListNote
 {
 public:
-	unsigned int nextPt, beginIndex, endIndex, leftEdge;
+	unsigned int nextPt,//0 作为结尾标识 
+		beginIndex, endIndex, leftEdge; 
 	
 };
 
@@ -31,6 +32,7 @@ enum cudaTexType
 	edgebuffer_t,
 	color_t,
 	pos_t,
+	normal_t,
 	posBlend_t,
 };
 

@@ -13,12 +13,22 @@
 #define min( a, b ) ( ((a) < (b)) ? (a) : (b) )
 #endif
 
+#define INTERSECT 1
+#define OHTEROBJECT (-1)
+#define MISSINGNOTE 0
+#define NOOBJECTNOTE 2
+#define OUTOCCLUDED 3
 #define FLT_MAX 99999.9
+//求交的宏
+#define RAYISUP 0
+#define RAYOUT 1
+#define RAYISUNDER 2
 texture<float4, 2, cudaReadModeElementType> cudaEdgeTex;//记录的是Edge,edge里面x记录x的sobal,edge里面y记录y的sobal
 texture<float4, 2, cudaReadModeElementType> cudaOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaTopOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaColorTex;
 texture<float4, 2, cudaReadModeElementType> cudaPosTex;
+texture<float4, 2, cudaReadModeElementType> cudaNormalTex;
 texture<float4, 2, cudaReadModeElementType> optixColorTex;
 texture<float4, 2, cudaReadModeElementType> posBlendTex;
 cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
@@ -69,6 +79,17 @@ float4 *cuda_construct_texturePbo_buffer;
 
 __device__ float4* d_map_buffer;  //d_map_buffer x 记录的是texture 到新的texture的映射，y记录的是遮挡像素的地区到新扩增的地区的映射，z记录的是遮挡地区的noteId
 float4* cuda_map_buffer;
+__device__ int nearestInt(float value)
+{
+	return value + 0.5;
+}
+__device__ int startInt(float value, bool isUp)
+{
+	if (isUp)
+		return floor(value);
+	else
+		return ceil(value);
+}
 __host__ __device__ float4 MutiMatrix(float * Matrix, float4 invalue)
 {
 	float x = invalue.x;
@@ -206,10 +227,10 @@ __device__ bool isOccluedeArea(float2 tc)
 	int mappedY = (int)(d_map_buffer[index].y + 0.5);
 	if (mappedY < 1)
 	{
-		printf("not occluded\n");
+		//printf("not occluded\n");
 		return false;
 	}
-	printf("occluded mapped coord:(%d,%d)\n", mappedY, mapTx.y);
+	//printf("occluded mapped coord:(%d,%d)\n", mappedY, mapTx.y);
 	return true;
 
 }
@@ -237,6 +258,11 @@ __device__ bool noMappedPosition(float2 tc, float4* poc)
 
 	//printf("mapped coord:(%d,%d)\n", mappedX, mapTx.y);
 	*poc = tex2D(optixColorTex, mappedX, nonNorTc.y);
+	//printf("color:(%f,%f,%f,%f)\n", poc->x, poc->y, poc->z, poc->w);
+	if (poc->w < 0)
+	{
+		return false;
+	}
 	if (mappedX < 1)
 	{
 		return false;
@@ -405,6 +431,7 @@ __global__ void countRowKernelTop(int kernelWidth, int kernelHeight)
 	}
 }
 // 记录interval  interval的leftEdge 记录最左边的edge（为非冗余渲染用），beginIndex记录第一个遮挡的像素。endIndex 记录的是右边界（右边边界像素-1位）
+// 每一个
 __global__ void countRowKernel(int kernelWidth, int kernelHeight)
 {
 	int y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
@@ -452,6 +479,7 @@ __global__ void countRowKernel(int kernelWidth, int kernelHeight)
 			//printf("end :%d\n", x);
 
 			d_listBuffer[listIndex].endIndex = x - 1;
+			//d_listBuffer[listIndex].endIndex = d_listBuffer[listIndex].beginIndex + 117;
 			etype = notVolumn;
 		}
 
@@ -649,11 +677,10 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	int y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
 	if (y > kernelHeight)
 		return;
-	//if (y != 838)
-	//  	return;
+	//if (y != 837)
+	 //	return;
 	int listIndex = y;
 	int rowLength = d_imageWidth;
-	ListNote currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
 	int texEnd = 0;
 	int texBegin = 0;
 	int fillBegin = 0;
@@ -669,15 +696,20 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	//printf("printf:%d\n", rowLength);
 	int accum_index = 0;  // 记录累计
 	float factor = d_imageWidth*1.0 / rowLength;
-	currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
+	ListNote currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
 	int leftEdgeIndex = 0;
+	
 	while (currentNote.nextPt != 0)
 	{
+		/*if (listIndex == 836)
+		{
+			ListNote currentNote2 = *((ListNote*)&d_cudaPboBuffer[listIndex]);
 
+			printf("Render:next %d end:%d begin:%d,\n", currentNote2.nextPt, currentNote2.endIndex, currentNote2.beginIndex);
+		}*/
 		int noteIndex = currentNote.nextPt;
 		currentNote = d_listBuffer[currentNote.nextPt];
 		//	printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
-
 		texEnd = currentNote.endIndex;
 		span = currentNote.endIndex - currentNote.beginIndex + 1;
 		leftEdgeIndex = currentNote.leftEdge;
@@ -695,7 +727,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 
 }
 ListNote *device_data, *device_top_data = NULL;
-int atomBuffer = 1;
+int atomBuffer = 1; // 原子计数从1开始，0作为空节点标识位
 #ifdef DEBUG
 ListNote *host_data = NULL;
 #endif
@@ -770,8 +802,8 @@ extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocC
 	renderToTexutre << <gridSize, blockSize >> >(1, height);
 	/**/
 	//top Camera
-	checkCudaErrors(cudaMemcpyToSymbol(d_atomic, &atomBuffer, sizeof(int)));
-	checkCudaErrors(cudaMemset(cuda_PBO_Buffer, 0, height*sizeof(ListNote)));
+	//checkCudaErrors(cudaMemcpyToSymbol(d_atomic, &atomBuffer, sizeof(int)));
+	//checkCudaErrors(cudaMemset(cuda_PBO_Buffer, 0, height*sizeof(ListNote)));
 
 	dim3 gridSizeT(1, ROWLARGER* width / blockSize.y, 1);
 	countRowKernelTop << <gridSizeT, blockSize >> >(width, 1);
@@ -842,6 +874,12 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 	{
 		checkCudaErrors(cudaBindTextureToArray(posBlendTex, tmpcudaArray, channelDesc));
 		posBlendTex.filterMode = cudaFilterModeLinear;
+	}
+	else if (normal_t == pResouce->getType())
+	{
+
+		checkCudaErrors(cudaBindTextureToArray(cudaNormalTex, tmpcudaArray, channelDesc));
+		cudaNormalTex.filterMode = cudaFilterModePoint;
 	}
 }
 
@@ -932,139 +970,186 @@ __device__ float3 toFloat3(float4 inValue)
 {
 	return make_float3(inValue.x / inValue.w, inValue.y / inValue.w, inValue.z / inValue.w);
 }
-__device__ bool isIntersectNote(float3 posW, float3 directionW, float3 cameraPos, float2 tc, float2 projStart, float2 interval, float* modelView, float4* poc, float2& exitTC,float3& outWorldPos)
+
+__device__ int intersectCameraID(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int yIndex, bool isRayUp, int occludedObjId,
+								float* modelView,// 查询modelView 相机下的深度
+								float4& intersectColor, float2& exitTC, float3& exitWorldPos)
 {
-	printf("test tc:(%f,%f)\n", tc.x*d_imageWidth, tc.y*d_imageHeight);
-	float2 d_mapScale = 1.0 / make_float2(d_construct_width, d_construct_height);
-	int stepNY = abs(interval.y) / d_mapScale.y + 1;
-
-	float2 localTc = tc;
-	int noteId = getNoteIndex(localTc);
-	ListNote currentNote = *(ListNote*)&d_listBuffer[noteId];
-
 	int texEnd = currentNote.endIndex;  // 这个是右边边界-的值
 	int texBegin = currentNote.beginIndex;
 	int span = texEnd + 1 - texBegin;
-	//printf("texEnd:%d\n",texEnd);
-	int yIndex = floor(localTc.y*d_imageHeight);
-	float2 beforeEdgeUv = make_float2(texEnd + 0.5, yIndex + 0.5);
-	float2 endEdgeUv = make_float2(texEnd + 1 + 0.5, yIndex + 0.5);
-	float3 beforePos = make_float3(tex2D(cudaPosTex, beforeEdgeUv.x, beforeEdgeUv.y));
-	//printf("beforeEdgeUv:%f,%f\n", beforeEdgeUv.x, beforeEdgeUv.y);
-	float3 endPos = make_float3(tex2D(cudaPosTex, endEdgeUv.x, endEdgeUv.y));
-	float3 l_, w_;
-
-
-	bool is_;
-	float ratio_proj;
-	//printf("endEdgeUv:%f,%f\n", endEdgeUv.x, endEdgeUv.y);
-	//printf("beforePos:(%f,%f,%f)\n", beforePos.x, beforePos.y, beforePos.z);
-	//printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
-	//printf("rightCam:%f,%f,%f\n", d_eocPos.x, d_eocPos.y, d_eocPos.z);
-	float3 reversePoint3;
-	//rayIntersertectTriangle(float3 origin, float3 directionN, float3 cameraPos, float3 edgePoint1/*beginPos*/, float3 edgePoint2/*endPos*/, float* modelView_float, float3* pIntersectWorld3, float3* pLineIntersect, bool& isOnrTiangle, float& proj_ratio, float3& reversePoint3)
-	
-	//(rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforePos, endPos, d_modelViewRight, span, &w_, &l_, is_, ratio_proj, reversePoint3));
-	
+	int currentObjectId = nearestInt(tex2D(cudaNormalTex, texEnd - span / 2.0, yIndex + 0.5).w);
+	//printf("current obj fetch (%f,%f)\n", texEnd + span / 2.0, yIndex + 0.5);
+	//printf("note mid obj Id:%d\n", currentObjectId);
+	//printf("texBegin,span(%d,%d)\n", texBegin, span);
+	if (currentObjectId != occludedObjId)
 	{
+		//printf("objectId not same\n");
+		return OHTEROBJECT;
+	}
 #define GAP 0.01
-		bool isUpD = interval.y > 0;
-		//printf("isUp:%s\n", isUpD == FALSE ? "FALSE" : "TRUE");
-		float exitY, enterY;
-		if (isUpD)
+	float exitY, enterY;
+	if (isRayUp)
+	{
+		exitY = yIndex + 1.0 - GAP;
+		enterY = yIndex + GAP;
+	}
+	else
+	{
+		enterY = yIndex + 1.0 - GAP;
+		exitY = yIndex + GAP;
+	}
+	float2 beforeEnterTc = make_float2(texEnd + 0.5, enterY);                 //left
+	float3 beforeEntorPos = make_float3(tex2D(cudaPosTex, beforeEnterTc.x, beforeEnterTc.y));
+	float2 endEntorTc = make_float2(texEnd + 1 + 0.5, enterY);
+	float3 endEntorPos = make_float3(tex2D(cudaPosTex, endEntorTc.x, endEntorTc.y));
+	float2 beforeExitTc = make_float2(texEnd + 0.5, exitY);
+	float3 beforeExitPos = make_float3(tex2D(cudaPosTex, beforeExitTc.x, beforeExitTc.y));
+	float2 endExitTc = make_float2(texEnd + 1 + 0.5, exitY);
+	float3 endExitPos = make_float3(tex2D(cudaPosTex, endExitTc.x, endExitTc.y));
+	float enter_projRatio, exit_projRatiok;
+	float3 enterReservedPos, exitReservedPos, _;
+	bool f_;
+	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeEntorPos, endEntorPos, d_modelViewRight, span, &enterReservedPos, &_, f_, enter_projRatio, _);
+	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelViewRight, span, &exitReservedPos, &_, f_, exit_projRatiok, _);
+	
+	float2 camera1Entertc = getCameraTc(enterReservedPos, d_modelViewRight, d_porj);
+	//printf("camera1 entertc:(%f,%f)\n", 1024 * camera1Entertc.x, 1024 * camera1Entertc.y);
+	float2 camera1EXittc = getCameraTc(exitReservedPos, d_modelViewRight, d_porj);
+	//printf("camera1 exittc:(%f,%f)\n", 1024 * camera1EXittc.x, 1024 * camera1EXittc.y);
+	
+	float4 temp = MutiMatrixN(modelView, make_float4(enterReservedPos, 1));
+	float enterZ = -temp.z;
+	temp = MutiMatrixN(modelView, make_float4(exitReservedPos, 1));
+	float exitZ = -temp.z;
+	float step = (enter_projRatio > exit_projRatiok) ? -1.0 : 1.0;
+	float enterP = min(1, max(0, enter_projRatio));
+	float exitP = min(1, max(0, exit_projRatiok));
+	//printf("enterP,enterP(%f,%f)\n", enterP, exitP);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+	float dpdx = (repo(exitZ) - repo(enterZ)) / (exit_projRatiok - enter_projRatio);
+	bool isInLoop = false;
+	float lastSearch, currentZ;
+	float4 color;
+	for (float tex = texBegin + span* enterP; tex < texBegin + span* exitP; tex += step)
+	{
+		float ratioOneD = (tex - texBegin) / span;
+		currentZ = repo(repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
+		//printf("ratioOneD:%f,test tx:%f,currentZ:%f\n", ratioOneD, tex, currentZ);
+		if (noMappedPosition(make_float2(tex, yIndex + 0.5), &color))
 		{
-			exitY = yIndex + 1.0 - GAP;
-			enterY = yIndex + GAP;
+			float zOnTex = color.w;
+			//printf("mapped Z:%f\n", zOnTex);
+			if (currentZ > zOnTex)
+			{
+				//printf("intersect\n");
+				intersectColor = color;
+				return INTERSECT;
+
+			}
 		}
 		else
 		{
-			enterY = yIndex + 1.0 - GAP;
-			exitY = yIndex + GAP;
+			exitWorldPos = exitReservedPos;
+			return OUTOCCLUDED;
 		}
-		float2 beforeEnterTc = make_float2(texEnd + 0.5, enterY);                 //left
-		float3 beforeEntorPos = make_float3(tex2D(cudaPosTex, beforeEnterTc.x, beforeEnterTc.y));
-		float2 endEntorTc = make_float2(texEnd + 1 + 0.5, enterY);
-		float3 endEntorPos = make_float3(tex2D(cudaPosTex, endEntorTc.x, endEntorTc.y));
-		float2 beforeExitTc = make_float2(texEnd + 0.5, exitY);
-		float3 beforeExitPos = make_float3(tex2D(cudaPosTex, beforeExitTc.x, beforeExitTc.y));
-		float2 endExitTc = make_float2(texEnd + 1 + 0.5, exitY);
-		float3 endExitPos = make_float3(tex2D(cudaPosTex, endExitTc.x, endExitTc.y));
-		float enter_projRatio, exit_projRatiok;
-		float3 enterReservedPos, exitReservedPos, _;
-		bool f_;
-		//printf("enter!!!!\n");
-		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeEntorPos, endEntorPos, d_modelViewRight, span, &enterReservedPos, &_, f_, enter_projRatio, _);
-		//printf("exit!!!!\n");
-		float2 camera1Entertc = getCameraTc(enterReservedPos, d_modelView, d_porj);
-		printf("camera1 entertc:(%f,%f)\n", 1024 * camera1Entertc.x, 1024 * camera1Entertc.y);
-		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelViewRight, span,&exitReservedPos, &_, f_, exit_projRatiok, _);
-		float2 camera1EXittc = getCameraTc(exitReservedPos, d_modelView, d_porj);
-		printf("camera1 exittc:(%f,%f)\n", 1024 * camera1EXittc.x, 1024 * camera1EXittc.y);
-		printf("enterY,exitY:(%f,%f)\n", enterY, exitY);
-		//printf("enterReservedPos:%f,%f,%f\n", enterReservedPos.x, enterReservedPos.y, enterReservedPos.z);
-		//printf("exitReservedPos:%f,%f,%f\n", exitReservedPos.x, exitReservedPos.y, exitReservedPos.z);
-		float4 temp = MutiMatrixN(modelView, make_float4(enterReservedPos, 1));
-		float enterZ = -temp.z;
-		temp = MutiMatrixN(modelView, make_float4(exitReservedPos, 1));
-		float exitZ = -temp.z;
-
-		float4 color;
-		float step = (enter_projRatio > exit_projRatiok) ? -1.0 : 1.0;
-		float enterP = min(1, max(0, enter_projRatio));
-		float exitP = min(1, max(0, exit_projRatiok));
-		float dpdx = (repo(exitZ) - repo(enterZ)) / (exit_projRatiok - enter_projRatio);
-		printf("tratio: %f, enter_projRatio:%f ,exit_projRatiok :%f \n", ratio_proj, enter_projRatio, exit_projRatiok);
-		//printf("enterZ: %f, exitZ:%f ,dpdx :%f \n", enterZ, exitZ, dpdx);
-		//printf("add:%f", add);
-		bool isInLoop = false;
-		float lastSearch,currentZ;
-		for (float tex = texBegin + span* enterP; tex < texBegin + span* exitP; tex += step)
-		{
-			float ratioOneD = (tex - texBegin) / span;
-			//printf("repo(enterZ):%f,second:%f,d:%f\n", repo(enterZ), (ratioOneD - enter_projRatio)*dpdx, repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
-			currentZ = repo(repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
-			//printf("temp:%f\n", (ratioOneD - enter_projRatio));
-			printf("ratioOneD:%f,test tx:%f,currentZ:%f\n", ratioOneD, tex, currentZ);
-
-
-			if (noMappedPosition(make_float2(tex, yIndex + 0.5), &color))
-			{
-				float zOnTex = color.w;
-				printf("mapped Z:%f\n", zOnTex);
-				if (currentZ > zOnTex)
-				{
-					printf("intersect\n");
-					*poc = color;
-					return 1;
-
-				}
-			}
-			lastSearch = tex;
-			isInLoop = true;
-		}
-		exitTC.x = (texBegin + span* exitP) / d_imageWidth;
-		outWorldPos = exitReservedPos;
-		if (isInLoop)
-		{
-			printf("last x:%f\n", lastSearch);
-			exitTC.x = lastSearch / d_imageWidth;
-			float zRatio = (currentZ - enterZ) / (exitZ - enterZ);
-			outWorldPos = lerp(enterReservedPos, exitReservedPos, zRatio);
-			printf("zRatio:%f\n", zRatio);
-			float2 outTc = getCameraTc(outWorldPos, d_modelView, d_porj);
-			printf("outTc :(%f,%f)\n", 1024 * outTc.x, 1024 * outTc.y);
-		}
-		float2 outtc = getCameraTc(outWorldPos, d_modelView, d_porj);
-			
-		printf("isInLoop:%d, out last x:%f\n", isInLoop, lastSearch);
-			
-		// not intersect with the note
-		return 0;
-#undef GAP
+		lastSearch = tex;
+		isInLoop = true;
 	}
-	return 0;
-}
+	/*
+	exitTC.x = (texBegin + span* exitP) / d_imageWidth;
+	exitWorldPos = exitReservedPos;
+	if (isInLoop)
+	{
+		//printf("last x:%f\n", lastSearch);
+		exitTC.x = lastSearch / d_imageWidth;
+		float zRatio = (currentZ - enterZ) / (exitZ - enterZ);
+		exitWorldPos = lerp(enterReservedPos, exitReservedPos, zRatio);
+		//printf("zRatio:%f\n", zRatio);
+		float2 outTc = getCameraTc(exitWorldPos, d_modelView, d_porj);
+		//printf("outTc :(%f,%f)\n", 1024 * outTc.x, 1024 * outTc.y);
+	}
+	float2 outtc = getCameraTc(exitWorldPos, d_modelView, d_porj);
+	*/
+	//printf(" missingNote\n");
+	return MISSINGNOTE;
 
+
+
+#undef GAP
+	
+}
+// 检查在objectId所代表的遮挡物下面的求交结果
+__device__ int isIntersectLineWithObjectId(float3 posW, float3 directionW, float3 cameraPos, int lineNum, bool isRayUp, int occudedObjId,
+							float* modelView,float3& outPos,float4& resultColor)
+{
+	ListNote currentNote = *((ListNote*)&d_cudaPboBuffer[lineNum]);
+
+	//printf("Render:next %d end:%d begin:%d,\n", currentNote.nextPt, currentNote.endIndex, currentNote.beginIndex);
+	int leftEdgeIndex = 0;
+	bool hasObjectNote = false;
+	while (currentNote.nextPt != 0)
+	{
+		int noteIndex = currentNote.nextPt;
+		currentNote = d_listBuffer[currentNote.nextPt];
+
+
+		//printf("intersect with a line\n");
+		float2 _;
+		int result = intersectCameraID(posW, directionW, cameraPos, currentNote, lineNum, isRayUp, occudedObjId, modelView, resultColor, _, outPos);
+		
+		if (result != OHTEROBJECT)
+		{
+			//如果找到了相同obj
+			//printf("obj found\n");
+			hasObjectNote = true;
+		}
+		if (OUTOCCLUDED == result)
+		{
+			return OUTOCCLUDED;
+		}
+		else if (INTERSECT == result)
+		{
+			return INTERSECT;
+		}
+		else if (currentNote.nextPt == 0)
+		{
+			//最后一个节点
+			break;
+		}
+		else if (OHTEROBJECT == result || MISSINGNOTE == result)
+		{
+			//test other note in the same line
+			currentNote = *((ListNote*)&d_cudaPboBuffer[currentNote.nextPt]);
+		}
+	}
+	
+	if (hasObjectNote)
+	{
+		//返回没有收到
+		return MISSINGNOTE;
+	}
+	return NOOBJECTNOTE;
+}
+//#define RAYISUP 0
+//#define RAYOUT 1
+//#define RAYISUNDER 2
+//坐标都在0-1空间
+__device__ int rayBelowMainTex(float n, int stepN,float2 projStart,float2 interval,float rayStartz, float rayEndZ,float2 &tc)
+{
+	float alpha = n / stepN;
+	tc = projStart + interval* n / stepN;
+	float currRayPointZ = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndZ));
+	float currSamplePointZ = colorTextreNorTc(tc).w;
+	if (tc.x>1 || tc.x<0 || tc.y<0 || tc.y>1 || currSamplePointZ > 0)
+	{
+		return 0;
+	}
+	// 因为是-值，光线的比图片深度远（大）意味着z要小
+	else if (currRayPointZ <= currSamplePointZ)
+		return RAYISUNDER;
+	else
+		return RAYISUP;
+}
 __device__ int intersectTexRay(float3 posW, float3 directionW, float4& oc)
 {
 	float2 d_mapScale = 1.0 / make_float2(d_construct_width, d_construct_height);
@@ -1101,20 +1186,13 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float4& oc)
 	projEnd.x = 0.5*projEnd.x + 0.5;
 	projStart.y = 0.5*projStart.y + 0.5;
 	projEnd.y = 0.5*projEnd.y + 0.5;
-	float2 testTc = getCameraTc(posW + epison*directionW, d_modelView, d_porj);
-	printf("testTc(%f,%f)\n", (testTc.x) * 1024, (testTc.y) * 1024);
-
+	
 
 	//printf("projStart(%f,%f),projEnd(%f,%f)\n", (projStart.x) * 1024, (projStart.y) * 1024, projEnd.x * 1024, projEnd.y * 1024);
-	rayStart.z = rayStart.z;
-
-	if (projStart.x>1 || projStart.x<0 || projStart.y<0 || projStart.y>1 || rayStart.z>0)
-	{
-		return 0;
-	}
+	
+	
 	//oc = make_float4(projStart.x,projStart.y,projStart.z,0.7);	
 	//return 1;
-	float alpha = 0;
 	float2 interval = make_float2(projEnd.x, projEnd.y) - make_float2(projStart.x, projStart.y);
 	int stepN;
 	//printf("interval:(%f,%f)\n", interval.x, interval.y);
@@ -1124,38 +1202,34 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float4& oc)
 	else
 		stepN = abs(interval.y) / d_mapScale.y + 1;
 
-	//printf("stepN:%d\n", stepN);
 	float currSamplePointZ, currRayPointZ, prevSamplePointZ, prevRayPointZ;
 	float3 currSamplePoint, currRayPoint;
 	float n = 0;
-	float2 tc = make_float2(projStart.x, projStart.y);
+	float2 tc;
 	bool isNotValid = true;
 
-	if (tc.x>1 || tc.x<0 || tc.y<0 || tc.y>1)
-	{
-		return 0;
-	}
-	n = 0;
-	int count = 0;
-	bool formerCompare = false;
-	bool compare = false;
-	float2 formertc;
+	
 	//printf("interval*1024(%f,%f)\n", (interval.x) * 1024, (interval.y) * 1024);
-	bool isBelowO = true;
 	//printf("stepN:%d\n", stepN);
+	int prevState,currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
+	if (RAYOUT == currentRayState)
+	{
+		return false;// 没在相机空间内
+	}
 	if (stepN<2)
 	{
-		//printf("here");
-		oc = colorTextreNorTc(tc + interval / 2);
+		oc = colorTextreNorTc(make_float2(projStart.x, projStart.y) + interval / 2);
 		return 1;
 	}
-	while (tc.x >= 0 && tc.x <= 1 && tc.y >= 0 && tc.y <= 1 && n <= stepN)
+	for (; n <= stepN;	n += 1)
 	{
-		alpha = (float)n / stepN;
-		currRayPointZ = 1 / ((1 - alpha)*(1 / rayStart.z) + (alpha)*(1 / rayEnd.z));
-		currSamplePointZ = colorTextreNorTc(tc).w;
-		printf("tc:(%f,%f),n:%f,stepN:%d,z:(%f,%f)\n", 1024 * tc.x, 1024 * tc.y, n, stepN, currRayPointZ, currSamplePointZ);
-		if ((currSamplePointZ<0) && (currRayPointZ <= currSamplePointZ))
+		prevState = currentRayState;
+		currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
+		if (RAYOUT == currentRayState)
+		{
+			return false;// 没在相机空间内
+		}
+		if (RAYISUNDER == currentRayState && RAYISUP == prevState)
 		{
 			color = colorTextreNorTc(tc);
 			float lastAlpha = 0;
@@ -1166,77 +1240,63 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float4& oc)
 			if (isTracingEdge(lastTc))// 如果倒数第二个是在边沿上，也就是进入遮挡体
 			{
 				int stepY = abs(interval.y) / d_mapScale.y + 1;
-				//printf("interval:(%f,%f),StepY:StepN (%d,%d),gap:%f\n", interval.x, interval.y, stepY, stepN, (float)stepN / stepY);
 				float3 exitPos;
 				bool rayAdvanced = false;
-				while (isOccluedeArea(tc))//search in occluded area
+				if (isOccluedeArea(tc))//search in occluded area
 				{
-					rayAdvanced = true;
-					float2 exitTc;
-					if (isIntersectNote(posW, directionW, d_eocPos, tc, make_float2(projStart.x, projStart.y), interval, d_modelViewRight, &oc, exitTc, exitPos))
+					//找到遮挡体的bojectId
+					float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
+					int objectId = nearestInt(tex2D(cudaNormalTex, nonNorTc.x, nonNorTc.y).w);
+					bool isUp = interval.y > 0;
+					int startLineNum = floor(tc.y*d_imageHeight);  // 如果是6.6 行，按第6行搜索
+					float3 outPos;
+					int result = isIntersectLineWithObjectId(posW, directionW, d_eocPos, startLineNum, isUp, objectId, d_modelViewRight, outPos, oc);
+					int lineId = startLineNum + (isUp ? 1 : -1);// lineId 存储的是要搜索的下一行
+					n = previewsN;
+					n += (float)stepN / stepY;
+					while (result == MISSINGNOTE)// 如果这一列中没有求交到MISS,并且没有发生
+					{
+						
+						result = isIntersectLineWithObjectId(posW, directionW, d_eocPos, lineId, isUp, objectId, d_modelViewRight, outPos, oc);
+						lineId = lineId + (isUp ? 1 : -1);
+						n += (float)stepN / stepY;	
+
+					}
+					if (result == INTERSECT)
 					{
 						return 1;
 					}
-					else
+					else if (OUTOCCLUDED == result)//如果到了一重新回到主相机
 					{
-						float2 testTc = getCameraTc(exitPos, d_modelView, d_porj);
-						exitTc = testTc;
-						printf("exitTc is (%f,%f)\n", exitTc.x*d_imageWidth, exitTc.y*d_imageHeight);
-						n += (float)stepN / stepY; //next line
-						tc = make_float2(projStart.x, projStart.y) + interval* n / stepN;
-						tc.x = testTc.x;
-						printf("nextTc is (%f,%f)\n", tc.x*d_imageWidth, tc.y*d_imageHeight);
-
-					}
-
-				}
-				if (rayAdvanced)// 回到主相机，算光线的递进
-				{
-					printf("back project into main camea\n");
-					n = previewsN;
-					n += (float)stepN / stepY;
-					tc = make_float2(projStart.x, projStart.y) + interval* n / stepN;
-					printf("main tc:(%f,%f)\n",tc.x,tc.y);
-					/*
-					temp = MutiMatrixN(d_modelView, make_float4(exitPos, 1));
-					float exitStep = (repo(temp.z) - repo(rayStart.z)) *stepN / (repo(rayEnd.z) - repo(rayStart.z));
-					printf("exitStep:%f,n+1:%f\n", exitStep, n + 1);
-					if (n + 1 > exitStep) // 找更大的递进步长
-					{
-						n += 1;
-						tc = make_float2(projStart.x, projStart.y) + interval* n / stepN;
-
-						printf("matching tc(%f,%f)\n", tc.x, tc.y);
+						//通过lineId 的号码来判断n更新n的地方，为该行的一个偏移处，
+						float newN;
+#define GAP 0.01
+						newN = stepN * abs(lineId + GAP - projStart.y / d_mapScale.y) / (abs(interval.y) / d_mapScale.y);
+						n = max(newN, previewsN);
+						currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
+#undef GAP
+						continue;// 下一步寻找
 					}
 					else
 					{
-
-						temp = MutiMatrixN(d_porj, temp);
-						float3 projExit = toFloat3(temp);
-						projExit.x = 0.5*projExit.x + 0.5;
-						projExit.x = 0.5*projExit.x + 0.5;
-						tc = make_float2(projExit.x, projExit.y);
-						float2 testTc = getCameraTc(exitPos, d_modelView, d_porj);
-						tc = testTc;
-						n = exitStep;
-						printf("projected tc(%f,%f)\n",tc.x,tc.y);
-					}*/
-					continue;
+						continue;
+					}
+					
 				}
 				else
 				{
-					printf("no intersection in occluded area\n");
+					//printf("no intersection in occluded area\n");
 					return 0;
 				}
 			}
+			//在主视角里面找到了交点
 			color.w = 1;
 			oc = color;
-			printf("main camera intersection found\n");
+			//printf("main camera intersection found\n");
 			return 1;
 		}
-		n += 1;
-		tc = make_float2(projStart.x, projStart.y) + interval* n / stepN;
 	}
+	// 在搜索范围内找不到
 	return 0;
 
 }
@@ -1248,8 +1308,10 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
-	if (x != 421|| y != 840)
-		return;
+	//if (x != 420 || y != 840)
+	//    return;
+	//if ( y >= 470||x>=414)
+	//	return;
 	//printf("test:x%d,y:%d\n", x, y);
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
