@@ -33,7 +33,7 @@ enum cudaTexType
 	color_t,
 	pos_t,
 	normal_t,
-	posBlend_t,
+	posBlend_t,//这个是两个pos 做并集
 };
 
 
