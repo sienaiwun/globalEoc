@@ -15,6 +15,7 @@
 #include "showShader.h"
 #include "Constructor.h"
 #include "pointRender.h"
+#include "RenderConstruct.h"
 Timer g_time;
 static Camera g_Camera;
 static Camera g_navi_Cam;
@@ -30,6 +31,7 @@ static Constructor g_Consturctor;
 PointRender g_pointRender;
 PointRender g_OptixPointRender;
 Fbo g_pointRenderFbo;
+RenderConstruct g_renderConstruct;
 void drawTex(GLuint mapId, bool addition = false, nv::vec2f beginPoint = nv::vec2f(0, 0), nv::vec2f endPoint = nv::vec2f(1, 1))
 {
 	g_showShader.setBegin(beginPoint);
@@ -149,6 +151,10 @@ void Init()
 	g_Consturctor.setBlendPosBuffer(&pEoc->getPosBlendFbo());
 	g_Consturctor.init();
 	pEoc->render(texManager);
+
+	//g_renderConstruct = RenderConstruct(pEoc->getOptixTex(), pEoc->getPosBlendFbo().getTexture(0));
+	//g_renderConstruct.setSize(pEoc->getOptixWidth(), pEoc->getOptixHeight());
+	//g_renderConstruct.build();
 
 }
 

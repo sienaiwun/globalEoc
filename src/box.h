@@ -9,7 +9,7 @@ public:
 	boxScene()
 	{
 		m_fileName.resize(1);
-		m_fileName[0] = "./model/urban/box.obj";
+		m_fileName[0] = "./model/urban/sphere.obj";
 		m_cameraFile = "./model/urban/box.txt";
 		m_naviFile = "./model/urban/boxnavi.txt";
 		init();
