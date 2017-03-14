@@ -4,7 +4,7 @@
 #include <nvMatrix.h>
 #include "Camera.h"
 
-//#define PRINTDEBUG
+#define PRINTDEBUG
 #ifdef PRINTDEBUG
 #define my_printf(...) \
 	printf(__VA_ARGS__)
@@ -1257,6 +1257,78 @@ __device__ int rayBelowMainTex(float n, int stepN, float2 projStart, float2 inte
 	else
 		return RAYISUP;
 }
+
+__device__ float3 startPointOfTex(float2 projStart, float2 projEnd, float rayStartz, float rayEndz)
+{
+	float2 wtx = projEnd - projStart;
+	float alpha = 0;
+	if (projStart.x<0)
+	{
+		alpha = (0.00000 - projStart.x) / (projEnd.x - projStart.x);
+		projStart.y = projStart.y + (0.00000 - projStart.x)*wtx.y / wtx.x;
+		projStart.x = 0.00000;
+	}
+	else if (projStart.x>1)
+	{
+		alpha = (1.0f - projStart.x) / (projEnd.x - projStart.x);
+		projStart.y = projStart.y + (1.0f - projStart.x)*wtx.y / wtx.x;
+		projStart.x = 1.0f;
+
+	}
+	else if (projStart.y>1)
+	{
+		alpha = (1.0f - projStart.y) / (projEnd.y - projStart.y);
+
+		projStart.x = projStart.x + (1.0f - projStart.y)*wtx.x / wtx.y;
+		projStart.y = 1.0f;
+
+	}
+	else if (projStart.y<0)
+	{
+		alpha = (0.0f - projStart.y) / (projEnd.y - projStart.y);
+
+		projStart.x = projStart.x + (0.00000 - projStart.y)*wtx.x / wtx.y;
+		projStart.y = 0.00000;
+
+	}
+	rayStartz = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndz));
+	alpha = 0;
+	if (projStart.x<0)
+	{
+		alpha = (0.00000 - projStart.x) / (projEnd.x - projStart.x);
+
+		projStart.y = projStart.y + (0.00000 - projStart.x)*wtx.y / wtx.x;
+		projStart.x = 0.00000;
+
+	}
+	else if (projStart.x>1)
+	{
+		alpha = (1.0f - projStart.x) / (projEnd.x - projStart.x);
+		projStart.y = projStart.y + (1.0f - projStart.x)*wtx.y / wtx.x;
+		projStart.x = 1.0f;
+
+	}
+	else if (projStart.y>1)
+	{
+		alpha = (1.0f - projStart.y) / (projEnd.y - projStart.y);
+
+		projStart.x = projStart.x + (1.0f - projStart.y)*wtx.x / wtx.y;
+		projStart.y = 1.0f;
+
+	}
+	else if (projStart.y<0)
+	{
+		alpha = (0.0f - projStart.y) / (projEnd.y - projStart.y);
+
+		projStart.x = projStart.x + (0.00000 - projStart.y)*wtx.x / wtx.y;
+		projStart.y = 0.00000;
+
+	}
+	rayStartz = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndz));
+
+	return make_float3(projStart, rayStartz);
+
+}
 __device__ int intersectTexRay(float3 posW, float3 directionW, float4& oc)
 {
 	float2 d_mapScale = 1.0 / make_float2(d_construct_width, d_construct_height);
@@ -1294,6 +1366,10 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float4& oc)
 	projStart.y = 0.5*projStart.y + 0.5;
 	projEnd.y = 0.5*projEnd.y + 0.5;
 
+	float3 shiftValue = startPointOfTex(make_float2(projStart.x, projStart.y), make_float2(projEnd.x, projEnd.y), rayStart.z, rayEnd.z);
+	projStart.x = shiftValue.x;
+	projStart.y = shiftValue.y;
+	rayStart.z = shiftValue.z;
 
 	//printf("projStart(%f,%f),projEnd(%f,%f)\n", (projStart.x) * 1024, (projStart.y) * 1024, projEnd.x * 1024, projEnd.y * 1024);
 
@@ -1339,6 +1415,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float4& oc)
 		}
 		if (RAYISUNDER == currentRayState && RAYISUP == prevState)
 		{
+			
 			color = colorTextreNorTc(tc);
 			float lastAlpha = 0;
 			if (n >= 1)
@@ -1430,12 +1507,12 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 391 || y != 644)
+	if (x != 549 || y != 659)
 	   return;
 	
 #endif
-	//if ( y < 640)
-	//	return;
+	if ( y <617)
+		return;
 	//if ( y >= 470||x>=414)
 	//	return;
 	//printf("test:x%d,y:%d\n", x, y);

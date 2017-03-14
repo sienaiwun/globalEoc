@@ -98,7 +98,7 @@ RT_PROGRAM void shadow_request()
 		float dist = sqrtf(dot(L, L));
 		float3 ray_direction = L / dist;
 		//optix::Ray ray = optix::make_Ray(ray_origin, ray_direction, shadow_ray_type, dist, textValue.x);
-		optix::Ray ray = optix::make_Ray(ray_origin, ray_direction, shadow_ray_type, dist, 99999.9);
+		optix::Ray ray = optix::make_Ray(ray_origin, ray_direction, shadow_ray_type, 1.0f, 99999.9);
 		rtTrace(reflectors, ray, prd);
 		result_buffer[launch_index] = make_float4(prd.attenuation,1);
 		result_buffer[launch_index].z =( result_buffer[launch_index].z +3 )/4;
@@ -115,7 +115,7 @@ RT_PROGRAM void shadow_request()
 		float3 L = targetPos - ray_origin;
 		float dist = sqrtf(dot(L, L));
 		float3 ray_direction = L / dist;
-		optix::Ray ray = optix::make_Ray(ray_origin, ray_direction, shadow_ray_type, dist, -textValue.x);
+		optix::Ray ray = optix::make_Ray(ray_origin, ray_direction, shadow_ray_type, 1.0f, -textValue.x);
 		rtTrace(reflectors, ray, prd);
 		result_buffer[launch_index] = make_float4(prd.attenuation, 1);
 		result_buffer[launch_index].y = (result_buffer[launch_index].y + 3) / 4;
