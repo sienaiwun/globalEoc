@@ -168,7 +168,7 @@ extern "C" void cudaRelateTex(CudaTexResourse * pResouce);
 extern "C" void cudaRelateArray(CudaPboResource * pResouce);
 extern "C" void pboRefresh(CudaPboResource * pResource);
 extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEoc, Camera * pEocTopCamera);
-extern void cudaInit(int height,int width, int k,int rowLarger);
+extern void cudaInit(int height,int width, int k,float rowLarger);
  
 
 #endif

@@ -10,6 +10,7 @@
 #include "blender.h"
 #include "macro.h"
 #include "rowCounter.h"
+#include "mergePosShader.h"
 #ifdef OPTIX
 #include <optixu/optixpp_namespace.h>
 #include <optixu/optixu_math_namespace.h>
@@ -115,6 +116,10 @@ public:
 	{
 		return m_posBlendFbo;
 	}
+	inline Fbo getMergePosFbo()
+	{
+		return m_margePosFbo;
+	}
 private:
 	bool m_debugSwap;
 	EocCamera m_eocRightCam;
@@ -125,6 +130,7 @@ private:
 	GbufferShader m_gbufferShader;
 	BlendShader m_blendShader;
 	EocVolumnShader m_volumnShader;
+	MergePosShader m_mergePosShader;
 	ProgShader g_progShader;
 	Scene * m_pScene, *m_pQuad;
 	GLuint m_width, m_height, m_k;
@@ -135,6 +141,7 @@ private:
 	Fbo m_edgeFbo;
 	Fbo m_progFbo;
 	Fbo m_posBlendFbo;
+	Fbo m_margePosFbo;
 	Fbo m_gbufferFbo;
 	Fbo m_gbufferRightEocFbo;
 	Fbo m_gbufferTopEocFbo;
@@ -155,6 +162,7 @@ public:
 	{
 		return m_optixWorldTex;
 	}
+	void EOCEdgeRender();
 private:
 	optix::Context        m_rtContext;
 	optix::Buffer         m_rtfinalBuffer;

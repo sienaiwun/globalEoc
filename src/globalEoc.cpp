@@ -42,6 +42,7 @@ EOCrender::EOCrender(int w, int h) :m_height(h), m_width(w), m_pScene(NULL)
 	m_gbufferTopEocFbo = Fbo(1, m_width, m_height);
 	m_gbufferTopEocFbo.init();
 
+
 	glBindTexture(GL_TEXTURE_2D, m_edgeFbo.getTexture(0));
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -81,6 +82,8 @@ EOCrender::EOCrender(int w, int h) :m_height(h), m_width(w), m_pScene(NULL)
 	g_progShader.setRes(nv::vec2f(m_width, m_height));
 	g_progShader.setEdgeFbo(&m_edgeFbo);
 
+
+
 	m_blendShader.init();
 
 	//m_pQuad = new QuadScene();
@@ -98,12 +101,22 @@ EOCrender::EOCrender(int w, int h) :m_height(h), m_width(w), m_pScene(NULL)
 	pCounter->init();
 
 	myGeometry::initImageMesh(m_width, m_height);
+
+
+
+	m_cudaTexWidth = ROWLARGER * m_width;
+	m_cudaTexHeight = ROWLARGER * m_height;
+	m_margePosFbo = Fbo(1, m_cudaTexWidth, m_cudaTexHeight);
+	m_margePosFbo.init();
+	m_mergePosShader.init();
+	m_mergePosShader.setGbuffer(m_gbufferFbo.getTexture(1));
+
+
+
 }
 #ifdef OPTIX
 void EOCrender::initOptix()
 {
-	m_cudaTexWidth = ROWLARGER * m_width;
-	m_cudaTexHeight = ROWLARGER * m_height;
 	glGenBuffers(1, &m_optixPbo);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_optixPbo);
 	glBufferData(GL_PIXEL_UNPACK_BUFFER, m_cudaTexWidth * m_cudaTexHeight * sizeof(float4), 0, GL_STREAM_READ);
@@ -184,6 +197,10 @@ void EOCrender::initOptix()
 		printf("%s\n", e.getErrorString().c_str());
 		exit(-1);
 	}
+}
+void EOCrender::EOCEdgeRender()
+{
+
 }
 void EOCrender::optixTracing()
 {
@@ -349,9 +366,10 @@ void EOCrender::render(textureManager & manager)
 	
 	m_blendShader.setGbuffer(&m_gbufferFbo);
 	m_blendShader.setProgBuffer(&m_progFbo);
+	m_blendShader.setCamera(m_eocRightCam.getEocCameraP());
 	m_posBlendFbo.begin();
 	myGeometry::drawQuad(m_blendShader);
-	//m_renderFbo.SaveBMP("test2.bmp", 0);
+	//m_posBlendFbo.SaveBMP("test2.bmp", 0);
 	m_posBlendFbo.end();
 	
 	//for visualization
@@ -383,5 +401,13 @@ void EOCrender::render(textureManager & manager)
 #ifdef OPTIX
 	optixTracing();
 #endif
+
+	/*
+	m_mergePosShader.setOptixPosTex(getOptixWorldTex());
+	m_margePosFbo.begin();
+	myGeometry::drawQuad(m_mergePosShader);
+	m_margePosFbo.SaveBMP("test2.bmp", 2);
+	m_margePosFbo.end();
+	*/
 
 }

@@ -43,8 +43,8 @@ texture<float4, 2, cudaReadModeElementType> cudaTopOccuderTex;
 texture<float4, 2, cudaReadModeElementType> cudaColorTex;
 texture<float4, 2, cudaReadModeElementType> cudaPosTex;
 texture<float4, 2, cudaReadModeElementType> cudaNormalTex;
-texture<float4, 2, cudaReadModeElementType> optixColorTex;
-texture<float4, 2, cudaReadModeElementType> posBlendTex;
+texture<float4, 2, cudaReadModeElementType> optixColorTex;    //记录的是optix 追踪的eoc图像，w通道记录的是投影深度，原视点相机为负值，负值为正值，我也不知道为啥
+texture<float4, 2, cudaReadModeElementType> posBlendTex;   //记录的是eoc相机空间下的位置图像，w通道记录的是是否是边界
 cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
 typedef enum {
 	isVolumn,
@@ -116,6 +116,19 @@ struct EOCPixel
 };
 __device__ float4* d_map_buffer;  //d_map_buffer x 记录的是texture 到新的texture的映射，y记录的是遮挡像素的地区到新扩增的地区的映射，z记录的是遮挡地区的noteId
 float4* cuda_map_buffer;
+#define EOC_RIGHT_EDGE_VALID 1
+#define EOC_RIGHT_TOP_VALID 2
+struct edgeInfo
+{
+	bool isRightEdge;
+	float dzdx;
+	__device__ __host__ edgeInfo():	isRightEdge (false),dzdx(0)
+	{
+	
+	}
+};
+__device__ edgeInfo* d_edge_buffer;// 
+edgeInfo* edgeBuffer;
 __device__ int nearestInt(float value)
 {
 	return value + 0.5;
@@ -287,12 +300,12 @@ __device__ bool canGetMappedPosition(float2 tc, float4* poc)
 	return true;
 
 }
-__device__ int noMappedPosition(float2 tc, float4& poc)
+__device__ int noMappedPosition(float2 tc, int &mappedX,float4& poc)
 {
 	float2 nonNorTc = tc;
 	int2 mapTx = nearestTc(nonNorTc);
 	int index = mapTx.y * d_imageWidth + mapTx.x;
-	int mappedX = (int)(d_map_buffer[index].y + 0.5);
+    mappedX = (int)(d_map_buffer[index].y + 0.5);
 	my_printf("mapped coord:(%d,%d)\n", mappedX, mapTx.y);
 	poc = tex2D(optixColorTex, mappedX, nonNorTc.y);
 	my_printf("color:(%f,%f,%f,%f)\n", poc.x, poc.y, poc.z, poc.w);
@@ -606,6 +619,7 @@ __device__ void FillSpanTop(int beginY, int endY, int x, float2 beginUv, float2 
 		d_cudaTopTexture[index] = FillPoint(beginUv.x - 0.5, uvy - 0.5);//tex2D(cudaColorTex, beginUv.x, uvy);
 	}
 }
+
 __global__ void renderToTexutreTop(int kernelWidth, int kernelHeight)
 {
 	const int index = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
@@ -775,7 +789,7 @@ int atomBuffer = 1; // 原子计数从1开始，0作为空节点标识位
 #ifdef DEBUG
 ListNote *host_data = NULL;
 #endif
-extern void cudaInit(int height, int width, int k, int rowLarger)
+extern void cudaInit(int height, int width, int k, float rowLarger)
 {
 	checkCudaErrors(cudaMalloc(&device_data, height*k*sizeof(ListNote)));
 
@@ -802,7 +816,10 @@ extern void cudaInit(int height, int width, int k, int rowLarger)
 	//memset(host_data, 0, height*k*sizeof(ListNote));
 	//checkCudaErrors(cudaMemcpy((void *)device_data, (void *)host_data, height * k * sizeof(ListNote), cudaMemcpyDeviceToHost));
 
-
+	const int eocWidth = width*rowLarger;
+	const int eocHeight = height*rowLarger;
+	checkCudaErrors(cudaMalloc(&edgeBuffer, eocWidth*eocHeight*sizeof(edgeInfo)));
+	checkCudaErrors(cudaMemcpyToSymbol(d_edge_buffer, &edgeBuffer, sizeof(edgeInfo*)));
 
 
 }
@@ -1032,13 +1049,15 @@ __device__ float3 toFloat3(float4 inValue)
 //#define RAYOUT 1
 //#define RAYISUNDER 2
 //如果光线比较远返回RAYISUNDER，如果比较近返回RAYISUP，如果不合理返回RAYOUT，如果返回主相机则是RAYBACKTOMAIN
+//dpdx 记录的是光线在x方向上的
 __device__ EOCPixel occludedRayState(float tex, int yIndex, float texBegin, float span, float enterZ, float dpdx, float enter_projRatio, float4& color)
 {
 	EOCPixel currentPixel;
 	float ratioOneD = (tex - texBegin) / span;
 	float currentZ = repo(repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
 	my_printf("ray Z:%f\n", currentZ);
-	int texFetchState = noMappedPosition(make_float2(tex, yIndex + 0.5), color);
+	int mappedX;
+	int texFetchState = noMappedPosition(make_float2(tex, yIndex + 0.5), mappedX, color);
 	//这里的w指示到右相机视点的距Zdis,是正值，
 	if (RAYVALID == texFetchState)
 	{
@@ -1047,8 +1066,12 @@ __device__ EOCPixel occludedRayState(float tex, int yIndex, float texBegin, floa
 		currentPixel.m_isValid = true;
 		//printf("mapped Z:%f\n", zOnTex);
 		//如果光线比较远则距离值大
-		currentPixel.m_isAtEdge = abs(currentZ - zOnTex) > 3; 
+		//currentPixel.m_isAtEdge = abs(currentZ - zOnTex) > 3;
+		const int eocWidth = d_imageWidth*ROWLARGER;
+		currentPixel.m_isAtEdge = d_edge_buffer[yIndex*eocWidth+mappedX].isRightEdge;
 		currentPixel.m_isValid = currentPixel.m_isValid&(!currentPixel.m_isAtEdge);
+		float dzdx = d_edge_buffer[yIndex*eocWidth + mappedX].dzdx;
+
 		if (currentZ > zOnTex)
 		{
 			currentPixel.m_state = RAYISUNDER;
@@ -1083,6 +1106,124 @@ __device__ float3 plateInterpolation(float3 pos, float3 dir, float2 ndc, float3 
 	float3 predictPos = getIntersection(pos, dir, cameraPos, predictNear);
 	return predictPos;
 }
+__device__ bool pixelValid(int x, int y)
+{
+	float pocw = tex2D(optixColorTex, x + 0.5, y + 0.5).w;
+	return pocw >0;
+}
+__device__ float mfracf(float x)
+{
+	return x - floorf(x);
+
+}
+__device__ int intersectCameraMidID(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int yIndex, bool isRayUp, int occludedObjId,
+	float* modelView,// 查询modelView 相机下的深度
+	bool& returnToMainC, EOCPixel &lastPixel, float4& intersectColor, float2& exitTC, float3& exitWorldPos)
+{
+	int texEnd = currentNote.endIndex;  // 这个是右边边界-的值
+	int texBegin = currentNote.beginIndex;
+	int span = texEnd + 1 - texBegin;
+	int currentObjectId = nearestInt(tex2D(cudaNormalTex, texEnd - span / 2.0, yIndex + 0.5).w);
+	if (currentObjectId != occludedObjId)
+	{
+		return OHTEROBJECT;
+	}
+	float dpdx;
+	{
+		float exitY, enterY, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
+
+#define GAP 0.01
+		if (isRayUp)
+		{
+			exitY = yIndex + 1.0 - GAP;
+			enterY = yIndex + GAP;
+		}
+		else
+		{
+			enterY = yIndex + 1.0 - GAP;
+			exitY = yIndex + GAP;
+		}
+#undef GAP
+
+		float2 beforeEnterTc = make_float2(before, enterY);                 //left
+		float2 endEnterTc = make_float2(end, enterY);
+		float2 beforeExitTc = make_float2(before, exitY);                 //left
+		float2 endExitTc = make_float2(end, exitY);
+
+		float3 beforeCenterPos = make_float3(tex2D(cudaPosTex, before, yIndex + 0.5));
+		float3 beforeNormal = normalize(d_cameraPos - beforeCenterPos);
+		float3 endCenterPos = make_float3(tex2D(cudaPosTex, end, yIndex + 0.5));
+		float3 endNormal = normalize(d_cameraPos - endCenterPos);
+
+		float3 beforeEnterPos = plateInterpolation(beforeCenterPos, beforeNormal, beforeEnterTc, d_cameraPos);
+		float3 endEnterPos = plateInterpolation(endCenterPos, endNormal, endEnterTc, d_cameraPos);
+		float3 beforeExitPos = plateInterpolation(beforeCenterPos, beforeNormal, beforeExitTc, d_cameraPos);
+		float3 endExitPos = plateInterpolation(endCenterPos, beforeNormal, endExitTc, d_cameraPos);
+
+
+		float enter_projRatio, exit_projRatiok;
+		float3 enterReservedPos, exitReservedPos, _;
+		bool f_;
+		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeEnterPos, endEnterPos, d_modelViewRight, span, &enterReservedPos, &_, f_, enter_projRatio, _);
+		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelViewRight, span, &exitReservedPos, &_, f_, exit_projRatiok, _);
+
+		float2 camera1Entertc = getCameraTc(enterReservedPos, d_modelViewRight, d_proj);
+		//printf("camera1 entertc:(%f,%f)\n", 1024 * camera1Entertc.x, 1024 * camera1Entertc.y);
+		float2 camera1EXittc = getCameraTc(exitReservedPos, d_modelViewRight, d_proj);
+		//printf("camera1 exittc:(%f,%f)\n", 1024 * camera1EXittc.x, 1024 * camera1EXittc.y);
+
+		float4 temp = MutiMatrixN(modelView, make_float4(enterReservedPos, 1));
+		float enterZ = -temp.z;
+		temp = MutiMatrixN(modelView, make_float4(exitReservedPos, 1));
+		float exitZ = -temp.z;
+		float step = (enter_projRatio > exit_projRatiok) ? -1.0 : 1.0;
+		float enterP = min(1, max(0, enter_projRatio));
+		float exitP = min(1, max(0, exit_projRatiok));
+		my_printf("enter_projRatio:%f,exit_projRatiok:%f\n", enter_projRatio, exit_projRatiok);
+
+		//printf("enterP,enterP(%f,%f)\n", enterP, exitP);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+		 dpdx = (repo(exitZ) - repo(enterZ)) / (exit_projRatiok - enter_projRatio);
+	}
+	float middleY = yIndex + 0.5, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
+
+	float3 beforeCenterPos = make_float3(tex2D(cudaPosTex, before, yIndex + 0.5));
+	float3 beforeNormal = normalize(d_cameraPos - beforeCenterPos);
+	float3 endCenterPos = make_float3(tex2D(cudaPosTex, end, yIndex + 0.5));
+	float3 endNormal = normalize(d_cameraPos - endCenterPos);
+
+
+	float  center_projRatiok;
+	float3  centerRevervedPos, _;
+	bool f_;
+	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeCenterPos, endCenterPos, d_modelViewRight, span, &centerRevervedPos, &_, f_, center_projRatiok, _);
+	float4 temp = MutiMatrixN(modelView, make_float4(centerRevervedPos.x, centerRevervedPos.y, centerRevervedPos.z, 1));
+	float rayZ = -temp.z;
+
+	float cneterP = min(1, max(0, center_projRatiok));
+	float texX = texBegin + span*cneterP;
+	int mappedX;
+	float4 outcolor;
+	int texFetchState = noMappedPosition(make_float2(texX, yIndex + 0.5), mappedX, outcolor);
+	if (RAYVALID == texFetchState)
+	{
+		int leftX = mappedX - 1;
+		int rightX = mappedX + 1;
+		const int eocWidth = d_imageWidth* ROWLARGER;
+		if (mfracf(texX)>0.5&&pixelValid(rightX, yIndex))
+		{
+			float dzdx = d_edge_buffer[yIndex*eocWidth + mappedX].dzdx;
+	
+		}
+		else if (mfracf(texX) < 0.5&&pixelValid(leftX, yIndex))
+		{
+
+		}
+
+	}
+
+	return 0;
+}
+
 //如果不是一个ID,返回OHTEROBJECT，如果有交点返回INTERSECT，没有交点返回MISSINGNOTE，returnToMainC记录是是否有非冗余值
 __device__ int intersectCameraID(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int yIndex, bool isRayUp, int occludedObjId, 
 	float* modelView,// 查询modelView 相机下的深度
@@ -1113,6 +1254,7 @@ __device__ int intersectCameraID(float3 posW, float3 directionW, float3 cameraPo
 		exitY = yIndex + GAP;
 	}
 	
+#undef GAP
 	float2 beforeEnterTc = make_float2(before, enterY);                 //left
 	float2 endEnterTc = make_float2(end, enterY);
 	float2 beforeExitTc = make_float2(before, exitY);                 //left
@@ -1536,7 +1678,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 670 || y != 426)
+	if (x != 659 || y != 470)
 	   return;
 #endif
 	//if ( y <100)
@@ -1550,7 +1692,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
 	float3 viewDirection = normalize(beginPoint - d_construct_cam_pos);
 
-	//printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
+	my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
 	float4 outColor;
 	if (intersectTexRay(beginPoint, viewDirection,BEGINOFFSET,ENDOFFSET, outColor))
 	{
@@ -1569,6 +1711,75 @@ void construct_cudaInit()
 	checkCudaErrors(cudaMalloc(&modelView_construct_inv, 16 * sizeof(float)));
 
 
+}
+__device__ bool eocIsRight(int x,int y)
+{
+	float4 value = tex2D(optixColorTex, x, y);
+	return value.w > 0;
+}
+#define EDGETHRES 0.005
+#define ISMIDDLE 3
+#define ISRIGHT 4
+#define ISLEFT 5
+__device__ edgeInfo isEocRightEdge(int left, int ceter, int right, int y, int type)
+{
+	edgeInfo value;
+	float leftRe = 1.0 / tex2D(optixColorTex, left, y).w;
+	float centerRe = 1.0 / tex2D(optixColorTex, ceter, y).w;
+	float rightRe = 1.0 / tex2D(optixColorTex, right, y).w;
+	my_printf("left:%f,center:%f,right:%f,value:%f\n", leftRe, centerRe, rightRe, abs(2 * centerRe - leftRe - rightRe));
+
+	if (ISMIDDLE == type)
+	{
+		value.dzdx = (rightRe - leftRe) / 2;
+	}
+	else if (ISLEFT == type)
+	{
+		value.dzdx = centerRe - leftRe;
+	}
+	else if (ISRIGHT == type)
+	{
+		value.dzdx = rightRe-centerRe;
+	}
+	value.isRightEdge = abs(2 * centerRe - leftRe - rightRe) > EDGETHRES;
+	return value;
+}
+__global__ void EocEdgeKernel(int kernelWidth, int kernelHeight)
+{
+	int x = blockIdx.x*blockDim.x + threadIdx.x;
+	int y = blockIdx.y*blockDim.y + threadIdx.y;
+	
+	if (x >= kernelWidth || y >= kernelHeight)
+		return;
+#ifdef PRINTDEBUG
+	if (x != 649 || y != 774)
+		return;
+#endif
+	if (eocIsRight(x, y) && eocIsRight(x - 1, y) && eocIsRight(x + 1, y))
+	{
+		my_printf("center edge\n");
+		d_edge_buffer[y*kernelWidth + x] = isEocRightEdge(x - 1, x, x + 1, y,ISMIDDLE);
+	}
+	else if  (eocIsRight(x, y) && eocIsRight(x +1 , y) && eocIsRight(x + 2, y))
+	{
+		d_edge_buffer[y*kernelWidth + x] = isEocRightEdge(x, x + 1, x + 2, y,ISLEFT);
+	}
+	else if (eocIsRight(x, y) && eocIsRight(x - 1, y) && eocIsRight(x -2, y))
+	{
+		d_edge_buffer[y*kernelWidth + x] = isEocRightEdge(x - 2, x - 1, x, y,ISRIGHT);
+	}
+	else
+	{
+		d_edge_buffer[y*kernelWidth + x].isRightEdge = false;
+	}
+	
+}
+
+void edgeRendering(int width, int height)
+{
+	dim3 blockSize(16, 16, 1);
+	dim3 gridSize(width / blockSize.x, height / blockSize.y, 1);
+	EocEdgeKernel << <gridSize, blockSize >> >(width, height);
 }
 void cuda_Construct(int width, int height)
 {

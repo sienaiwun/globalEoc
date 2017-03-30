@@ -5,6 +5,7 @@
 #ifndef CONSTURCTOR_H
 #define CONSTURCTOR_H
 extern void cuda_Construct(int,int);
+extern void edgeRendering(int, int);
 void mapConstruct(Camera * pReconstructCamer);
 void construct_cudaInit();
 class Constructor

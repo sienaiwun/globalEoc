@@ -8,10 +8,11 @@ public:
 	RenderConstruct() = default;
 	RenderConstruct(GLuint optixColorTex, GLuint optixPosTex)
 	{
-		m_color_slot = optixColorTex;
-		m_pos_slot = optixPosTex;
+		m_optixColorTex = optixColorTex;
+		m_optixPosTex = optixPosTex;
 		m_pointPositonBuffer = 0;
 		m_colorBuffer = 0;
+		p_construcCam = 0;
 	}
 	inline void setSize(int w, int h)
 	{
@@ -20,8 +21,15 @@ public:
 	}
 	void Init();
 	void build();
-	
+	void renderSamples();
+	void render(glslShader & shader, Camera * pCamera);
+	void setConstructCam(Camera * pCam)
+	{
+		p_construcCam = pCam;
+	}
 private:
+	
+	Camera * p_construcCam;
 	void mapToBuffer();
 	GLuint m_optixColorTex, m_optixPosTex;
 	int m_color_slot, m_pos_slot;

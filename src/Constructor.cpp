@@ -32,7 +32,9 @@ void Constructor::construct()
 	mapConstruct(m_pNaviCam);
 	m_optixColorResource->map();
 	m_posBlendTex->map();
-
+	const int eocWidhth = ROWLARGER*m_width;
+	const int eocHeight = ROWLARGER*m_height;
+	edgeRendering(eocWidhth, eocHeight);
 	cuda_Construct(m_width,m_height);
 
 	m_posBlendTex->unmap();

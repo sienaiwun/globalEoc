@@ -27,11 +27,15 @@ public:
 	{
 		pProgBuffer = p;
 	}
-
+	inline void setRightCamera(Camera * pCam)
+	{
+		m_pRightCam = pCam;
+	}
 
 	inline void setParemeter();
 private:
-	GLuint gbufferSlot, progSlot;
+	GLuint gbufferSlot, progSlot,m_rightModelviewSlot;
 	Fbo *pGbuffer, *pProgBuffer;
+	Camera * m_pRightCam;
 };
 #endif

@@ -11,10 +11,10 @@ layout (location =  0) out vec4 color0;
 void main()
 {
 		vec4 posValue = texture2D(posTex,tc);
-		vec4 progValue = texture2D(optixPosTex,tc);
-		if(progValue.x>0.5)
+		vec4 optixValue = texture2D(optixPosTex,tc);
+		if(length(optixValue.xyz)>0.5)
 		{
-			color0.xyz =progValue.xyz;
+			color0.xyz =optixValue.xyz;
 		}
 		else
 		{

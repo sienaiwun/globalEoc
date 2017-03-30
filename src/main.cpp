@@ -16,6 +16,7 @@
 #include "Constructor.h"
 #include "pointRender.h"
 #include "RenderConstruct.h"
+#include "greconstructShader.h"
 Timer g_time;
 static Camera g_Camera;
 static Camera g_navi_Cam;
@@ -32,6 +33,8 @@ PointRender g_pointRender;
 PointRender g_OptixPointRender;
 Fbo g_pointRenderFbo;
 RenderConstruct g_renderConstruct;
+RenderConstruct g_renderGbufferConstruct;
+GReconstructShader g_reconstructShader;
 void drawTex(GLuint mapId, bool addition = false, nv::vec2f beginPoint = nv::vec2f(0, 0), nv::vec2f endPoint = nv::vec2f(1, 1))
 {
 	g_showShader.setBegin(beginPoint);
@@ -147,14 +150,22 @@ void Init()
 	g_Consturctor.setNaveCam(&g_navi_Cam);
 	g_Consturctor.setScene(g_scene);
 	g_Consturctor.setOptixColorTex(pEoc->getOptixTex(), pEoc->getOptixWidth(), pEoc->getOptixHeight());
-	
 	g_Consturctor.setBlendPosBuffer(&pEoc->getPosBlendFbo());
 	g_Consturctor.init();
 	pEoc->render(texManager);
 
-	//g_renderConstruct = RenderConstruct(pEoc->getOptixTex(), pEoc->getPosBlendFbo().getTexture(0));
-	//g_renderConstruct.setSize(pEoc->getOptixWidth(), pEoc->getOptixHeight());
-	//g_renderConstruct.build();
+	g_reconstructShader.init();
+	g_renderConstruct = RenderConstruct(pEoc->getOptixTex(), pEoc->getOptixWorldTex());
+	g_renderConstruct.setSize(pEoc->getOptixWidth(), pEoc->getOptixHeight());
+
+	g_renderConstruct.setConstructCam(pEoc->getRightEocCamera()->getEocCameraP());
+	g_renderConstruct.build();
+
+	g_renderGbufferConstruct = RenderConstruct(pEoc->getGbufferP()->getTexture(0), pEoc->getGbufferP()->getTexture(1));
+	g_renderGbufferConstruct.setSize(pEoc->getWidth(), pEoc->getHeight());
+	g_renderGbufferConstruct.setConstructCam(&g_Camera);
+	g_renderGbufferConstruct.build();
+
 
 }
 
@@ -174,7 +185,6 @@ void Display()
 		g_navi_Cam.cameraControl();
 	}
 	
-
 	//drawTex(pEoc->getCudaTex(), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.65, 1.0));
 	//drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0-0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));
 //	drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0 - 0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));//
@@ -184,7 +194,7 @@ void Display()
 	drawTex(pEoc->getTopEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.25), nv::vec2f(1, 0.5));
 	//drawTex(pEoc->getTopOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.50), nv::vec2f(1, 0.75));
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
-	g_Consturctor.construct();
+	//g_Consturctor.construct();
 	drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
 	g_Consturctor.render(g_bufferShader, texManager);
 	CHECK_ERRORS();
@@ -194,8 +204,10 @@ void Display()
 
 	drawTex(g_Consturctor.getBuffer().getTexture(0), true, nv::vec2f(0.75, 0.5), nv::vec2f(1, 0.75));
 	g_pointRenderFbo.begin();
-	g_scene->render(g_bufferShader, texManager, &g_navi_Cam);
-	g_pointRenderFbo.SaveBMP("real.bmp",0);
+	//g_scene->render(g_bufferShader, texManager, &g_navi_Cam);
+	g_renderConstruct.render(g_reconstructShader, &g_navi_Cam);
+	g_renderGbufferConstruct.render(g_reconstructShader, &g_navi_Cam);
+	//g_pointRenderFbo.SaveBMP("real.bmp",0);
 	g_pointRenderFbo.end();
 	drawTex(g_pointRenderFbo.getTexture(0), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
 	
