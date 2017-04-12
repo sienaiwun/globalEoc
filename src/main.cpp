@@ -88,7 +88,6 @@ void Reshape(int w, int h)
 	glViewport(0, 0, w, h);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(60.0, (GLfloat)w / (GLfloat)h, 0.01, 1000.0);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 }
@@ -113,7 +112,7 @@ void Init()
 	glEnable(GL_DEPTH_TEST);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(60.0, (GLfloat)1.0, 0.01, 1000.0);
+	//gluPerspective(60.0, (GLfloat)1.0, 0.01, 1000.0);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	externWglewInit();
@@ -157,7 +156,7 @@ void Init()
 	g_reconstructShader.init();
 	g_renderConstruct = RenderConstruct(pEoc->getOptixTex(), pEoc->getOptixWorldTex());
 	g_renderConstruct.setSize(pEoc->getOptixWidth(), pEoc->getOptixHeight());
-
+	/*
 	g_renderConstruct.setConstructCam(pEoc->getRightEocCamera()->getEocCameraP());
 	g_renderConstruct.build();
 
@@ -165,7 +164,7 @@ void Init()
 	g_renderGbufferConstruct.setSize(pEoc->getWidth(), pEoc->getHeight());
 	g_renderGbufferConstruct.setConstructCam(&g_Camera);
 	g_renderGbufferConstruct.build();
-
+	*/
 
 }
 
@@ -194,7 +193,7 @@ void Display()
 	drawTex(pEoc->getTopEocBuffer()->getTexture(0), true, nv::vec2f(0.75, 0.25), nv::vec2f(1, 0.5));
 	//drawTex(pEoc->getTopOccludeFbo()->getTexture(0), true, nv::vec2f(0.75, 0.50), nv::vec2f(1, 0.75));
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
-	//g_Consturctor.construct();
+	g_Consturctor.construct();
 	drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
 	g_Consturctor.render(g_bufferShader, texManager);
 	CHECK_ERRORS();

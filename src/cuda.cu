@@ -133,6 +133,10 @@ __device__ int nearestInt(float value)
 {
 	return value + 0.5;
 }
+__device__ float repo(float value)
+{
+	return 1.0f / value;
+}
 __device__ int startInt(float value, bool isUp)
 {
 	if (isUp)
@@ -246,6 +250,23 @@ __device__ int2 nearestTc(float2 tc)
 {
 	return make_int2(tc.x, tc.y);//直接进行int转换，因为减去0.5+0.5
 }
+__device__ int2 neighborTc(float2 tc)
+{
+	if (tc.x - floor(tc.x) > 0.5)
+		return make_int2(tc.x + 1, tc.y);
+	else
+		return make_int2(tc.x - 1, tc.y);
+}
+//计算
+__device__ float linarRatio(float x)
+{
+	float fracPart = x - floor(x);
+	if (fracPart > 0.5)
+		return (fracPart - 0.5);
+	else
+		return (0.5 - fracPart);
+
+}
 //映射到扭曲空间
 __device__ float4 colorTextreNorTc(float2 tc)
 {
@@ -300,7 +321,7 @@ __device__ bool canGetMappedPosition(float2 tc, float4* poc)
 	return true;
 
 }
-__device__ int noMappedPosition(float2 tc, int &mappedX,float4& poc)
+__device__ int noMappedPosition(float2 tc, int &mappedX,float4& poc)// 这个是坐标点对于
 {
 	float2 nonNorTc = tc;
 	int2 mapTx = nearestTc(nonNorTc);
@@ -319,6 +340,69 @@ __device__ int noMappedPosition(float2 tc, int &mappedX,float4& poc)
 	}
 	return RAYVALID;
 
+}
+__device__ int linearNoMappedPosition(float2 tc, int eocWidth, EOCPixel & currentPixel, float4& oc)
+{
+	float2 nonNorTc = tc;
+	float4 oc1,oc2;
+	my_printf("tc:(%f,%f)\n", tc.x, tc.y);
+	bool centerisAtEdge,neighberIsAtEdge;
+	{
+		int2 mapTx = nearestTc(nonNorTc);
+	
+		int index = mapTx.y * d_imageWidth + mapTx.x;
+		int mappedX = (int)(d_map_buffer[index].y + 0.5);
+		 oc1 = tex2D(optixColorTex, mappedX, nonNorTc.y);
+		 my_printf("mappedX:%d\n", mappedX);
+
+		 if (mappedX < 1)
+		 {
+			 return RAYOUT;
+		 }
+		 centerisAtEdge = d_edge_buffer[mapTx.y*eocWidth + mappedX].isRightEdge;
+		
+	}
+	{
+		int2 neighborTx = neighborTc(nonNorTc);
+		//my_printf("neighborTx:(%d,%d)\n", neighborTx.x, neighborTx.y);
+
+		int neighborindex = neighborTx.y * d_imageWidth + neighborTx.x;
+	
+
+		int neighborMappedX = (int)(d_map_buffer[neighborindex].y + 0.5);
+		my_printf("neighborMappedX:%d\n", neighborMappedX);
+
+		oc2 = tex2D(optixColorTex, neighborMappedX, nonNorTc.y);
+		if (neighborMappedX < 1)
+		{
+			return RAYOUT;
+		}
+		neighberIsAtEdge = d_edge_buffer[neighborTx.y*eocWidth + neighborindex].isRightEdge;
+	}
+	if (centerisAtEdge || neighberIsAtEdge)
+	{
+		currentPixel.m_isValid = false;
+		return RAYOUT;
+	}
+	else
+		currentPixel.m_isValid = true;
+	if (oc1.w > 1500 || oc2.w > 1500)// 在raytracing.cu里面定义了如果是冗余区域，返回99999
+	{
+		return RAYBACKTOMAIN;
+	}
+	my_printf("oc1:(%f,%f,%f,%f)\n", oc1.x, oc1.y, oc1.z, oc1.w);
+	my_printf("oc2:(%f,%f,%f,%f)\n", oc2.x, oc2.y, oc2.z, oc2.w);
+
+	float ratio = linarRatio(tc.x);
+	float ratioZ = repo(repo(oc1.w) + ratio*(repo(oc2.w) - repo(oc1.w)));
+	float zRatio = (ratioZ - oc1.w) / (oc2.w - oc1.w);
+	my_printf("ratioZ,zRatio:(%f,%f)\n", ratioZ, zRatio);
+
+	oc = oc1 +  (oc2 - oc1)*zRatio;
+	my_printf("interpolated color:(%f,%f,%f,%f)\n", oc.x, oc.y, oc.z, oc.w);
+
+	return RAYVALID;
+	
 }
 __host__ __device__ void MutiMatrix(float * Matrix, float x, float y, float z, float &outx, float &outy, float &outz)
 {
@@ -352,10 +436,7 @@ class List
 {
 
 };
-__device__ float repo(float value)
-{
-	return 1.0f / value;
-}
+
 __device__ float getRatioInSpan(float3 beginPos, float3 endPos, float* p_modelView, float3 testPos)
 {
 	float x, y, z1, z2, z3;
@@ -1044,6 +1125,36 @@ __device__ float3 toFloat3(float4 inValue)
 }
 
 
+__device__ EOCPixel occludedRayLinarState(float tex, int yIndex, float texBegin, float span, float enterZ, float dpdx, float enter_projRatio, float4& color)
+{
+	EOCPixel currentPixel;
+	float ratioOneD = (tex - texBegin) / span;
+	float currentZ = repo(repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
+	const int eocWidth = d_imageWidth*ROWLARGER;
+
+	int texFetchState = linearNoMappedPosition(make_float2(tex, yIndex + 0.5), eocWidth, currentPixel, color);
+	if (RAYVALID == texFetchState)
+	{
+		float zOnTex = color.w;
+		currentPixel.m_detpth = zOnTex;
+		currentPixel.m_isValid = true;
+		my_printf("zOnTex:%f,currentZ:%f\n", zOnTex, currentZ);
+		if (currentZ > zOnTex)
+		{
+			currentPixel.m_state = RAYISUNDER;
+		}
+		else
+		{
+			currentPixel.m_state = RAYISUP;
+		}
+	}
+	else
+	{
+		currentPixel.m_isValid = false;
+	}
+	return currentPixel;
+
+}
 
 //#define RAYISUP 0
 //#define RAYOUT 1
@@ -1131,7 +1242,6 @@ __device__ int intersectCameraMidID(float3 posW, float3 directionW, float3 camer
 	float dpdx;
 	{
 		float exitY, enterY, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
-
 #define GAP 0.01
 		if (isRayUp)
 		{
@@ -1240,6 +1350,7 @@ __device__ int intersectCameraID(float3 posW, float3 directionW, float3 cameraPo
 	{
 		return OHTEROBJECT;
 	}
+	
 #define GAP 0.01
 	float exitY, enterY, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
 	
@@ -1302,11 +1413,12 @@ __device__ int intersectCameraID(float3 posW, float3 directionW, float3 cameraPo
 	{
 		//printf("ratioOneD:%f,test tx:%f,currentZ:%f\n", ratioOneD, tex, currentZ);
 		isInloop = true;
-		currentPixel = occludedRayState(tex, yIndex, texBegin, span, enterZ, dpdx, enter_projRatio,  color);
+		//currentPixel = occludedRayState(tex, yIndex, texBegin, span, enterZ, dpdx, enter_projRatio,  color);
+		currentPixel = occludedRayLinarState(tex, yIndex, texBegin, span, enterZ, dpdx, enter_projRatio, color);
 		my_printf("current state:%d\n", currentPixel.m_state);
 		my_printf("lastDepth,currentDepth:%f,%f\n", lastPixel.m_detpth, currentPixel.m_detpth);
 		bool isIntersect = (RAYISUNDER == currentPixel.m_state &&lastPixel.m_state == RAYISUP) || (RAYISUP == currentPixel.m_state &&lastPixel.m_state == RAYISUNDER);
-		printf("valid current(%d,last:%d,intersect:%d)\n", currentPixel.m_isValid, lastPixel.m_isValid, isIntersect);
+		my_printf("valid current(%d,last:%d,intersect:%d)\n", currentPixel.m_isValid, lastPixel.m_isValid, isIntersect);
 		if ( currentPixel.m_isValid&& lastPixel.m_isValid  && isIntersect)
 		{
 
@@ -1357,6 +1469,10 @@ __device__ int isIntersectLineWithObjectId(float3 posW, float3 directionW, float
 	my_printf("testLine num:%d\n", lineNum);
 	int leftEdgeIndex = 0;
 	bool hasObjectNote = false;
+	/*if (lineNum < 698)
+	{
+		return NOOBJECTNOTE;
+	}*/
 	while (currentNote.nextPt != 0)
 	{
 		int noteIndex = currentNote.nextPt;
@@ -1606,12 +1722,13 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 				float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
 				int objectId = nearestInt(tex2D(cudaNormalTex, nonNorTc.x, nonNorTc.y).w);
 				bool isUp = interval.y > 0;
-				int startLineNum = floor(lastTc.y*d_imageHeight);  // 如果是6.6 行，按第6行搜索
+				int startLineNum = floor(lastTc.y*d_imageHeight);  // 如果是6.6 行，按第6行搜索 单纯取整
 				float3 outPos;
 				bool returntoMain = false;
 				// 检查在objectId所代表的遮挡物下面的求交结果要么返回NOOBJECTNOTE，没有找到ID一样的要么返回misiing 没焦点
-				EOCPixel lastPicel(RAYBEGIN, 0.0f);
-			
+				EOCPixel lastPicel(RAYISUP, 0.0f);
+				lastPicel.m_isValid = true;
+				//EOCPixel lastPicel(RAYBEGIN, 0.0f);
 				int result = isIntersectLineWithObjectId(posW, directionW, d_eocPos, startLineNum, isUp, objectId, d_modelViewRight, returntoMain, lastPicel, outPos, oc);
 				int lineId = startLineNum + (isUp ? 1 : -1);// lineId 存储的是要搜索的下一行
 				n = previewsN;
@@ -1636,6 +1753,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 				if (result == INTERSECT)
 				{
 					my_printf("addition note intersect\n");
+					my_printf("oc:(%f,%f,%f)\n",oc.x,oc.y,oc.z);
 					return 1;
 				}
 				else //如果到了一重新回到主相机
@@ -1678,7 +1796,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 659 || y != 470)
+	if (x != 657 || y != 430)
 	   return;
 #endif
 	//if ( y <100)

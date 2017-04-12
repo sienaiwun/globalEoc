@@ -14,6 +14,13 @@ struct Point
 		else
 			isValid = true;
 	}
+	Point(nv::vec3f pos, nv::vec3f color, nv::vec2i cord) :m_pos(pos), m_color(color), m_x(cord.x), m_y(cord.y)
+	{
+		if (length(pos) < 1)
+			isValid = false;
+		else
+			isValid = true;
+	}
 };
 void RenderConstruct::mapToBuffer()
 {
@@ -83,27 +90,30 @@ nv::vec3f plateInterpolation(nv::vec3f pos, nv::vec3f dir, nv::vec2f ndc, nv::ve
 void renderQuad(Point& left, Point& right, nv::vec3f cameraPos, int w, int h, nv::matrix4f& modelViewInv, nv::matrix4f& projInv)
 {
 	float dis = nv::length(left.m_pos - right.m_pos);
+#define OFFSET -0.005
 	if (left.isValid&&right.isValid&&dis < 12)
 	{
 		{
 		Point currentPoint = left;
 		nv::vec3f dir = normalize(cameraPos - currentPoint.m_pos);
-		nv::vec3f topLeftPos = plateInterpolation(currentPoint.m_pos, dir, nv::vec2f(currentPoint.m_x+0.5, currentPoint.m_y + 0.9), cameraPos, w, h, modelViewInv, projInv);
+		nv::vec3f topLeftPos = plateInterpolation(currentPoint.m_pos, dir, nv::vec2f(currentPoint.m_x + 0.5, currentPoint.m_y + 1 - OFFSET), cameraPos, w, h, modelViewInv, projInv);
 		glVertex3fv((float*)&topLeftPos);
 		glNormal3fv((float*)&currentPoint.m_color);
-		nv::vec3f ButLeftPos = plateInterpolation(currentPoint.m_pos, dir, nv::vec2f(currentPoint.m_x + 0.5, currentPoint.m_y + 0.1), cameraPos, w, h, modelViewInv, projInv);
+		nv::vec3f ButLeftPos = plateInterpolation(currentPoint.m_pos, dir, nv::vec2f(currentPoint.m_x + 0.5, currentPoint.m_y + OFFSET), cameraPos, w, h, modelViewInv, projInv);
 		glVertex3fv((float*)&ButLeftPos);
 		glNormal3fv((float*)&currentPoint.m_color);
 		}
 		{
 		Point currentPoint = right;
 		nv::vec3f dir = normalize(cameraPos - currentPoint.m_pos);
-		nv::vec3f topLeftPos = plateInterpolation(currentPoint.m_pos, dir, nv::vec2f(currentPoint.m_x + 0.5, currentPoint.m_y + 0.9), cameraPos, w, h, modelViewInv, projInv);
-		glVertex3fv((float*)&topLeftPos);
-		glNormal3fv((float*)&currentPoint.m_color);
-		nv::vec3f ButLeftPos = plateInterpolation(currentPoint.m_pos, dir, nv::vec2f(currentPoint.m_x + 0.5, currentPoint.m_y + 0.1), cameraPos, w, h, modelViewInv, projInv);
+		nv::vec3f ButLeftPos = plateInterpolation(currentPoint.m_pos, dir, nv::vec2f(currentPoint.m_x + 0.5, currentPoint.m_y + OFFSET), cameraPos, w, h, modelViewInv, projInv);
 		glVertex3fv((float*)&ButLeftPos);
 		glNormal3fv((float*)&currentPoint.m_color);
+		 
+		nv::vec3f topLeftPos = plateInterpolation(currentPoint.m_pos, dir, nv::vec2f(currentPoint.m_x + 0.5, currentPoint.m_y + 1 - OFFSET), cameraPos, w, h, modelViewInv, projInv);
+		glVertex3fv((float*)&topLeftPos);
+		glNormal3fv((float*)&currentPoint.m_color);
+		
 		}
 
 	}
@@ -128,14 +138,22 @@ void drawRay(nv::vec3f pos, nv::vec3f dir,nv::vec3f color)
 	glVertex3fv((float*)&pos);
 	glNormal3fv((float*)&color);
 	glVertex3fv((float*)&(pos+ 155*dir));;
-
 	glNormal3fv((float*)&color);
 	glEnd();
 
 }
+ nv::vec2i  RenderConstruct::toImageCord(nv::vec3f pos)
+{
+	nv::vec4f temp = nv::matrix4f(p_construcCam->getMvpMat())* nv::vec4f(pos, 1.0f);
+	temp = temp / temp.w;
+	temp.x = temp.x * 0.5 + 0.5;
+	temp.y = temp.y * 0.5 + 0.5;
+	return nv::vec2i((temp.x*m_width), (temp.y*m_height));
+}
 void RenderConstruct::render(glslShader & shader, Camera * pCamera)
 {
-	glPointSize(2);
+	glPointSize(3);
+	glLineWidth(4);
 	shader.begin();
 	CHECK_ERRORS();
 	CHECK_ERRORS();
@@ -147,8 +165,12 @@ void RenderConstruct::render(glslShader & shader, Camera * pCamera)
 }
 void RenderConstruct::renderSamples()
 {
-	glCallList(m_renderList);
+	if (m_renderList)
+		glCallList(m_renderList);
+	drawRay(nv::vec3f(7.501300, -11.379437, -53.618397), nv::vec3f(-0.982115, -0.121992, 0.143415), nv::vec3f(0, 1, 0));// (x != 665 || y != 470)
+	drawRay(nv::vec3f(7.503413, -11.379437, -53.611973), nv::vec3f(-0.981129, -0.122128, 0.149905), nv::vec3f(1, 0, 0));
 }
+
 void RenderConstruct::build()
 {
 	mapToBuffer();
@@ -162,41 +184,50 @@ void RenderConstruct::build()
 		glDeleteLists(m_renderList, 1);
 	m_renderList = glGenLists(1);
 	glNewList(m_renderList, GL_COMPILE);
-	drawRay(nv::vec3f(7.503413, -11.379437, -53.611973), nv::vec3f(-0.981129, -0.122128, 0.149905), nv::vec3f(1, 0, 0));
-	drawRay(nv::vec3f(7.501300, -11.379437, -53.618397), nv::vec3f(-0.982115, -0.121992, 0.143415), nv::vec3f(0, 0, 1));// (x != 665 || y != 470)
+	//
 	int w = m_width, h = m_height;
 	nv::vec3f camPos = p_construcCam->getCameraPos();
 	glBegin(GL_QUADS);
 	for (int y = 0; y < m_height - 1; y++)	
 	{
 		for (int x = 0; x < m_width - 1; x++)
+		//int x = 123, y = 123;
 		{
 			Point point1, rightTop, right, top;
 			{
 				nv::vec3f position = nv::vec3f(&m_pointPositonBuffer[3 * (y*m_width + x)]);
 				nv::vec3f color = nv::vec3f(&m_colorBuffer[3 * (y*m_width + x)]);
-				point1 = Point(position, color,x,y);
+				nv::vec2i cord = toImageCord(position);
+				/*if ((cord.x != x && cord.x  > 1 && x < 1023) || (cord.y != y && cord.y > 1 && y <1023))
+				{
+					printf("aaa");
+				}*/
+				point1 = Point(position, color, cord.x, cord.y);
 			}
 			{
 				int x1 = x + 1;
 				int y1 = y + 1;
 				nv::vec3f position = nv::vec3f(&m_pointPositonBuffer[3 * (y1*m_width + x1)]);
 				nv::vec3f color = nv::vec3f(&m_colorBuffer[3 * (y1*m_width + x1)]);
-				rightTop = Point(position, color,x1,y1);
+				nv::vec2i cord = toImageCord(position);
+				
+				rightTop = Point(position, color, cord.x, cord.y);
 			}
 			{
 				int x2 = x + 1;
 				int y2 = y;
 				nv::vec3f position = nv::vec3f(&m_pointPositonBuffer[3 * (y2*m_width + x2)]);
 				nv::vec3f color = nv::vec3f(&m_colorBuffer[3 * (y2*m_width + x2)]);
-				right = Point(position, color, x2, y2);
+				nv::vec2i cord = toImageCord(position);
+				right = Point(position, color, cord.x, cord.y);
 			}
 			{
 				int x3 = x;
 				int y3 = y + 1;
 				nv::vec3f position = nv::vec3f(&m_pointPositonBuffer[3 * (y3*m_width + x3)]);
 				nv::vec3f color = nv::vec3f(&m_colorBuffer[3 * (y3*m_width + x3)]);
-				top = Point(position, color, x3, y3);
+				nv::vec2i cord = toImageCord(position);
+				top = Point(position, color, cord.x, cord.y);
 			}
 			make_quad(point1, rightTop, right, top, m_width, m_height, modelViewInv, projInv, camPos);
 		}

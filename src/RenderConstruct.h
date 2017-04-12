@@ -13,6 +13,7 @@ public:
 		m_pointPositonBuffer = 0;
 		m_colorBuffer = 0;
 		p_construcCam = 0;
+		m_renderList = 0;
 	}
 	inline void setSize(int w, int h)
 	{
@@ -27,6 +28,7 @@ public:
 	{
 		p_construcCam = pCam;
 	}
+	nv::vec2i toImageCord(nv::vec3f pos);
 private:
 	
 	Camera * p_construcCam;
