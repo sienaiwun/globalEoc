@@ -5,6 +5,7 @@ in vec3 pdebug;
 layout( location = 0 ) out vec4 FragColor0;
 uniform mat4 MVP; // Projection * ModelView
 uniform vec3 cameraPos;
+//edgeTex存储的是m_progFbo的值
 uniform sampler2D edgeTex;
 uniform sampler2D posTex;
 uniform vec2 resolution;

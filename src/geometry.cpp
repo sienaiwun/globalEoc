@@ -340,7 +340,6 @@ optix::Material myGeometry::getMeterial(int index)
 	//	printf("diffuse map:%s\n", material.diffuse_map);
 	if (texid > 0)
 	{
-
 		optix::Material flat_tex = rtContext->createMaterial();
 		flat_tex->setClosestHitProgram(0, rtContext->createProgramFromPTXFile(TEXTUREPATH, "closest_hit_radiance"));
 		flat_tex["diffuse_texture"]->setTextureSampler(getTexture(diffuseName));
@@ -352,9 +351,6 @@ optix::Material myGeometry::getMeterial(int index)
 		diffuse["diffuse_Color"]->setFloat(material.diffuse[0], material.diffuse[1], material.diffuse[2]);
 		return diffuse;
 	}
-
-
-	
 
 }
 optix::GeometryInstance  myGeometry::getInstance(int index)

@@ -16,8 +16,8 @@
 
 EOCrender::EOCrender()
 {
-	m_eocRightCam = EocCamera(is_Right, dis_orgin, to_flocus);
-	m_eocTopCam = EocCamera(is_Top, dis_orgin, to_flocus);
+	m_eocRightCam = EocCamera(is_Right, DIS_ORIGIN_W, to_flocus);
+	m_eocTopCam = EocCamera(is_Top, DIS_ORIGIN_H, to_flocus);
 	m_debugSwap = false;
 	pOriginCam = new Camera();
 }
@@ -81,15 +81,15 @@ EOCrender::EOCrender(int w, int h) :m_height(h), m_width(w), m_pScene(NULL)
 	g_progShader.setGbuffer(&m_gbufferFbo);
 	g_progShader.setRes(nv::vec2f(m_width, m_height));
 	g_progShader.setEdgeFbo(&m_edgeFbo);
-
+	//progShader在EdgeShader位置记录值x值记录Gbuffer的深度，yzw记录最近的位置pos
 
 
 	m_blendShader.init();
 
 	//m_pQuad = new QuadScene();
-	m_eocRightCam = EocCamera(is_Right, dis_orgin, to_flocus);
+	m_eocRightCam = EocCamera(is_Right, DIS_ORIGIN_W, to_flocus);
 	//m_eocTopCam = EocCamera(is_Top, dis_orgin, to_flocus);
-	m_eocTopCam = EocCamera(is_Top, 0, to_flocus);
+	m_eocTopCam = EocCamera(is_Top, DIS_ORIGIN_H, to_flocus);
 	m_debugSwap = false;
 
 	pCounter = new RowCounter(w, h);
@@ -160,7 +160,10 @@ void EOCrender::initOptix()
 		std::vector<int> enabled_devices = m_rtContext->getEnabledDevices();
 		m_rtContext->setDevices(enabled_devices.begin(), enabled_devices.begin() + 1);
 		
-		m_rtTexture = m_rtContext->createTextureSamplerFromGLImage(getCudaTex(), RT_TARGET_GL_TEXTURE_2D);
+		//m_rtTexture = m_rtContext->createTextureSamplerFromGLImage(getCudaTex(), RT_TARGET_GL_TEXTURE_2D);
+		m_rtTexture = m_rtContext->createTextureSamplerFromGLImage(getCudaTopTex(), RT_TARGET_GL_TEXTURE_2D);
+
+		
 		m_rtTexture->setWrapMode(0, RT_WRAP_CLAMP_TO_EDGE);
 		m_rtTexture->setWrapMode(1, RT_WRAP_CLAMP_TO_EDGE);
 		m_rtTexture->setWrapMode(2, RT_WRAP_CLAMP_TO_EDGE);
@@ -252,7 +255,7 @@ void EOCrender::optixTracing()
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	glPopAttrib();
 	
-	/*
+	
 	glEnable(GL_TEXTURE_2D);
 	BYTE *pTexture = NULL;
 	pTexture = new BYTE[cudaTexWidth*cudaTexHeight * 3];
@@ -268,7 +271,7 @@ void EOCrender::optixTracing()
 	if (pTexture)
 	delete[] pTexture;
 	glBindTexture(GL_TEXTURE_2D, 0);//TexPosId   PboTex
-	*/
+	
 
 }
 nv::vec2f toScreen(nv::vec4f value, nv::matrix4f mvp)
@@ -313,10 +316,10 @@ void EOCrender::render(textureManager & manager)
 	m_edgeFbo.end();
 	glDisable(GL_CONSERVATIVE_RASTERIZATION_NV);
 
-	//progBuffer里面texture0 存储的是
+	//progShader在EdgeShader位置记录值x值记录Gbuffer的深度，yzw记录最近的位置pos
 	m_progFbo.begin();
 	myGeometry::drawQuad(g_progShader);
-	//m_progFbo.SaveBMP("prog2.bmp", 1);
+	//	m_progFbo.SaveBMP("prog2.bmp", 1);
 
 	//m_progFbo.debugPixel(1, 366, 664);
 	//m_progFbo.debugPixel(1, 366, 666);
@@ -350,7 +353,6 @@ void EOCrender::render(textureManager & manager)
 	m_volumnShader.setAssoTex(m_occludedRightBuffer.getTexture(0));
 	CHECK_ERRORS();
 
-	glDisable(GL_CULL_FACE);
 	m_occludedTopBuffer.begin();
 	CHECK_ERRORS();
 	myGeometry::drawQuadMesh(m_volumnShader, m_width, m_height);
@@ -359,6 +361,7 @@ void EOCrender::render(textureManager & manager)
 	//m_occludedTopBuffer.SaveBMP("topOccluder.bmp", 0);
 	m_occludedTopBuffer.end();
 	CHECK_ERRORS();
+	glDisable(GL_CULL_FACE);
 	glDisable(GL_CONSERVATIVE_RASTERIZATION_NV);
 
 

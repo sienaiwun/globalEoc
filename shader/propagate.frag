@@ -1,5 +1,5 @@
 #version 430
-
+//progShader在EdgeShader位置记录值x值记录Gbuffer的深度，yzw记录最近的位置pos
 layout(location = 0) in vec2 tc;
 
 uniform sampler2D colorTex;
@@ -59,6 +59,7 @@ vec4 firstDisconect(vec2 tc)
 }
 bool isEdge(vec2 uv)
 {
+//edgeTex的Z值始终为1
 	return texture2D(edgeTex,uv).z>0.5;
 }
 //x 正值说明右边比左边深度深（远），边界由左边确定
@@ -88,27 +89,19 @@ bool isEdge(vec2 uv)
  }
  void vertiAssign(vec2 sobalValue,vec2 sign,vec2 tc)// 这里都是处理上边界
  {
-	vec2 step = 1.0/resolution;
-		
+	vec2 step = 1.0/resolution;		
 	if(abs(sobalValue.y/sobalValue.x)<1.0/1.732 )//如果水平方向占据主导，竖直边
 	{
-		
-		
-		
 			if(assignPosY(tc+vec2(sign.x*step.x,0)))//优选水平
 			{	
-				
-	
 				return;
 			}
 			else if(assignPosY(tc+vec2(sign.x*step.x,-step.y)))//优选下边
 			{
-				
 				return;
 			}
 			else if(assignPosY(tc+vec2(sign.x*step.x,step.y)))//优选水平下
 			{
-			
 				return;
 			}
 
@@ -133,7 +126,6 @@ bool isEdge(vec2 uv)
 	}
 	else if(abs(sobalValue.y/sobalValue.x)<1.732)//竖直和水平分量差不多，水平占主要
 	{
-
 		if(assignPosY(tc+vec2(sign.x*step.x,-step.y)))
 		{
 		

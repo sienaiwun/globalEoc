@@ -54,6 +54,13 @@ void RowCounter::init()
 	m_initArray = new CudaPboResource();
 	m_initArray->set(1, m_height, list_e);
 	m_initArray->init();
+
+	//m_initTopArray
+	m_initTopArray = new CudaPboResource();
+	m_initTopArray->set(1, m_height*ROWLARGER, list_top_e);
+	m_initTopArray->init();
+
+
 	m_OutTex = new CudaPboResource();
 	m_OutTex->set(ROWLARGER*m_width, m_height, to_optix_t);
 	m_OutTex->init();
@@ -78,6 +85,7 @@ void RowCounter::render(Camera *pCamera, Camera * pEocCam, Camera * pTopCamera)
 {
 	m_OutTex->map();
 	m_initArray->map();
+	m_initTopArray->map();
 	m_occluderRightCudaTex->map();
 	m_occluderTopCudaTex->map();
 	m_edgeCudaTex->map();
@@ -95,6 +103,7 @@ void RowCounter::render(Camera *pCamera, Camera * pEocCam, Camera * pTopCamera)
 
 	m_posCudaTex->unmap();
 	m_initArray->unMap();
+	m_initTopArray->unMap();
 	
 #ifdef DEBUG
 	m_initArray->generateTex();

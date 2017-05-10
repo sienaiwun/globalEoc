@@ -107,6 +107,7 @@ enum cudaPboType
 	test_t,
 	construct_t,
 	diff_normal_t,
+	list_top_e,
 	list_e,
 	top_float4_t,
 #ifdef NOISEMAP

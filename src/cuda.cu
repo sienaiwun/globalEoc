@@ -54,8 +54,10 @@ typedef enum {
 
 
 uint3 *cuda_PBO_Buffer;
+uint3 *cuda_PBO_Top_Buffer;
 
 __device__ uint3* d_cudaPboBuffer;
+__device__ uint3* d_cudaPboTopBuffer;
 float4 *cuda_TexturePbo_buffer, *cuda_top_TexturePbo_buffer;
 __device__ float4* d_cudaTexture;
 __device__ float4* d_cudaTopTexture;
@@ -64,6 +66,7 @@ __device__ int d_index;
 __device__ ListNote* d_listBuffer;
 __device__ ListNote* d_listBuffer_top;
 __device__ int d_atomic;
+__device__ int d_atomic_top;
 __device__ float3 d_cameraPos;
 __device__ float3 d_eocPos;
 __device__ float3 d_eocTopPos;
@@ -77,6 +80,9 @@ __device__ float* d_proj, *d_proj_inv;
 
 float* modelViewRight;
 __device__ float* d_modelViewRight;
+
+float* modelViewTop;
+__device__ float* d_modelViewTop;
 
 float* modelView_construct;
 float* project_construct;
@@ -528,13 +534,13 @@ __global__ void countRowKernelTop(int kernelWidth, int kernelHeight)
 	int index = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
 	if (index > kernelWidth)
 		return;
-	//if (index != 512)
-	//	return;
+	//if (index != 290)
+		//return;
 	int arrayNum = index;
 	int accumNum = 0;
 	int state = 0;
 	pixelEnum etype = notVolumn;
-	unsigned int* nextPtr = &d_cudaPboBuffer[arrayNum].x;
+	unsigned int* nextPtr = &d_cudaPboTopBuffer[arrayNum].x;
 	int listIndex;
 	int lastMinusIndey = 0;
 	for (int y = 0; y< d_imageHeight; y++)
@@ -546,14 +552,14 @@ __global__ void countRowKernelTop(int kernelWidth, int kernelHeight)
 		}
 		if (isVolumeTop(currentUv) && etype == notVolumn)
 		{
-			//printf("insert :%d\n", y);
-			listIndex = atomicAdd(&d_atomic, 1);
+		//	printf("insert :%d\n", y);
+			listIndex = atomicAdd(&d_atomic_top, 1);
 			atomicExch(nextPtr, listIndex);// write listIndex to next slot
-			d_listBuffer[listIndex].beginIndex = y;
-			d_listBuffer[listIndex].endIndex = y;
-			d_listBuffer[listIndex].nextPt = 0;
-			d_listBuffer[listIndex].leftEdge = lastMinusIndey;
-			nextPtr = (unsigned int *)(&(d_listBuffer[listIndex].nextPt));
+			d_listBuffer_top[listIndex].beginIndex = y;
+			d_listBuffer_top[listIndex].endIndex = y;
+			d_listBuffer_top[listIndex].nextPt = 0;
+			d_listBuffer_top[listIndex].leftEdge = lastMinusIndey;
+			nextPtr = (unsigned int *)(&(d_listBuffer_top[listIndex].nextPt));
 
 			etype = isVolumn;
 		}
@@ -564,7 +570,10 @@ __global__ void countRowKernelTop(int kernelWidth, int kernelHeight)
 		}
 		else if (etype == isVolumn && isEdgeTop(currentUv))
 		{
-			d_listBuffer[listIndex].endIndex = y - 1;
+			//printf("end :%d\n",y);
+
+
+			d_listBuffer_top[listIndex].endIndex = y - 1;
 			etype = notVolumn;
 		}
 	}
@@ -660,103 +669,6 @@ __device__ float4 FillPoint(int x, int y)
 	int index = y*d_outTextureWidth + x;
 	return  d_cudaTexture[index];
 }
-__device__ void FillVolumnTop(int beginY, int endY, int x, int endUv, int leftEdge)
-{
-	int top = min(endY, d_outTopTextureHeight);
-	//printf("volumn begin:%d,end:%d,top:%d\n",beginX,endX,top);
-	float3 beforePos = make_float3(tex2D(cudaPosTex, x, endUv - 0.5));
-
-	float3 endPos = make_float3(tex2D(cudaPosTex, x, endUv + 0.5));
-	float3 leftEdgePos = make_float3(tex2D(cudaPosTex, x, leftEdge + 1.5));
-	//printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
-	///printf("beforePos:(%f,%f,%f)\n", beforePos.x, beforePos.y, beforePos.z);
-	//printf("leftEdgePos:(%f,%f,%f)\n", leftEdgePos.x, leftEdgePos.y, leftEdgePos.z);
-	//printf("camera:(%f,%f,%f)\n", d_cameraPos.x, d_cameraPos.y, d_cameraPos.z);
-	float3 ecoCamera = d_eocTopPos;
-	//printf("eoc:(%f,%f,%f)\n", ecoCamera.x, ecoCamera.y, ecoCamera.z);
-
-	//for (int i = 0; i < 4; i++)
-	//	printf("(%f,%f,%f,%f)\n", d_modelView[4 * i + 0], d_modelView[4 * i + 1], d_modelView[4 * i + 2], d_modelView[4 * i + 3]);
-	for (int y = beginY; y < top; y++)
-	{
-		float ratio = (y * 1.0f - beginY*1.0f) / (top - 1 - beginY);
-		float3 realPos = projective_interpo(beforePos, endPos, d_modelView, ratio);
-		int index = y*d_outTopTextureWidth + x;
-		float dis = distance(leftEdgePos, realPos, ecoCamera);
-		d_cudaTopTexture[index] = make_float4(-dis, realPos.x, realPos.y, realPos.z);
-	}
-}
-__device__ void FillSpanTop(int beginY, int endY, int x, float2 beginUv, float2 endUv)
-{
-	int top = min(endY, d_outTopTextureHeight);
-	//printf("fill from %d to %d at line %d", beginY, endY, x);
-	//printf("begin(%f,%f),end(%f,%f),d_outTextureWidth:%d\n", beginUv.x, beginUv.y, endUv.x, endUv.y, d_outTextureWidth);
-	//printf("endY:%d,d_outTopTextureHeight:%d,top:%d\n", endY, d_outTopTextureHeight, top);
-
-	for (int y = beginY; y <= top; y++)
-	{
-		int index = y*d_outTopTextureWidth + x;
-		float uvy = beginUv.y + (endUv.y - beginUv.y)*(y - beginY) / (top - beginY);
-		d_cudaTopTexture[index] = FillPoint(beginUv.x - 0.5, uvy - 0.5);//tex2D(cudaColorTex, beginUv.x, uvy);
-	}
-}
-
-__global__ void renderToTexutreTop(int kernelWidth, int kernelHeight)
-{
-	const int index = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
-	if (index > kernelWidth)
-		return;
-	if (index > d_imageWidth)
-	{
-		FillLine(index);
-		return;
-	}
-	//if (index != 512)
-	//	return;
-	int listIndex = index;
-	int rowLength = d_imageWidth;
-	ListNote currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
-	int texEnd = 0;
-	int texBegin = 0;
-	int fillBegin = 0;
-	int fillEnd = 0;
-	int acuumPixel = 0, span = 0;
-	//printf("begin:%d,end%d,index:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt);
-	/*while (currentNote.nextPt != 0)
-	{
-	currentNote = d_listBuffer[currentNote.nextPt];
-	rowLength += currentNote.endIndex - currentNote.beginIndex;
-	//printf("begin:%d,end%d,index:%d,length:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt,rowLength);
-	}*/
-	//printf("printf:%d\n", rowLength);
-	float factor = d_imageWidth*1.0 / rowLength;
-	currentNote = *((ListNote*)&d_cudaPboBuffer[listIndex]);
-	int leftEdgeIndex = 0;
-	while (currentNote.nextPt != 0)
-	{
-
-
-		currentNote = d_listBuffer[currentNote.nextPt];
-		//printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
-
-		texEnd = currentNote.endIndex;
-		span = currentNote.endIndex - currentNote.beginIndex + 1;
-		leftEdgeIndex = currentNote.leftEdge;
-		fillBegin = texBegin + acuumPixel;
-		fillEnd = texEnd + acuumPixel;
-		FillSpanTop(fillBegin*factor, fillEnd*factor, index, toUv(index, texBegin), toUv(index, texEnd));  //for 循环，左闭右开
-		FillVolumnTop((fillEnd)*factor, (fillEnd + span)*factor, index, texEnd, leftEdgeIndex);
-
-		acuumPixel += span;
-		texBegin = currentNote.endIndex;
-		//printf("texBegin:%d,acuumPixel:%d,n:%d\n", texBegin, acuumPixel);
-
-	}
-	fillBegin = texBegin + acuumPixel;
-	//printf("final:(%d,%d) u(%f,%f)\n", fillBegin, d_imageWidth + span, toUv(index, texBegin).y, toUv(index,d_imageWidth).y);
-	FillSpanTop(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, index, toUv(index, texBegin), toUv(index, d_imageWidth - 1));
-
-}
 
 // 在第y 行的beginX 到endX直接记录中空的区域的位置信息leftEdge是用来评估左边边界，endUv是用来算左右两边的深度插值
 __device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge, int accumIndex, int  noteIndex)
@@ -794,6 +706,106 @@ __device__ void FillVolumn(int beginX, int endX, int y, int endUv, int leftEdge,
 		accumIndex++;
 	}
 }
+
+__device__ void FillVolumnTop(int beginY, int endY, int x, int endUv, int leftEdge, int accumIndex, int  noteIndex)
+{
+	int top = min(endY, d_outTopTextureHeight);
+	//printf("volumn begin:%d,end:%d,top:%d,endUv:%d\n", beginY, endY, top, endUv);
+	float2 beforeEdgeUv = toUv(x, endUv - 1);
+	float3 beforePos = make_float3(tex2D(cudaPosTex, beforeEdgeUv.x, beforeEdgeUv.y));
+	float2 endEdgeUv = toUv(x, endUv);
+	float3 endPos = make_float3(tex2D(cudaPosTex, endEdgeUv.x, endEdgeUv.y));
+	// 记录高点
+	float2 leftEdgeUv = toUv(x, leftEdge + 1);
+	float3 leftEdgePos = make_float3(tex2D(cudaPosTex, leftEdgeUv.x, leftEdgeUv.y));
+	float3 eoc_pos = d_eocTopPos;
+	/*printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
+	printf("beforePos:(%f,%f,%f)\n", beforePos.x, beforePos.y, beforePos.z);
+	printf("leftEdgePos:(%f,%f,%f)\n", leftEdgePos.x, leftEdgePos.y, leftEdgePos.z);
+	printf("camera:(%f,%f,%f)\n", d_cameraPos.x, d_cameraPos.y, d_cameraPos.z);
+	printf("eoc:(%f,%f,%f)\n", eoc_pos.x, eoc_pos.y, eoc_pos.z);*/
+
+	//for (int i = 0; i < 4; i++)
+	//	printf("(%f,%f,%f,%f)\n", d_modelView[4 * i + 0], d_modelView[4 * i + 1], d_modelView[4 * i + 2], d_modelView[4 * i + 3]);
+	for (int y = beginY; y < top; y++)
+	{
+		int lenght = (top + 1 - beginY);
+		float ratio = (y * 1.0f - beginY*1.0f) / lenght;
+		float3 realPos = projective_interpo(beforePos, endPos, d_modelViewTop, ratio);
+		int index = y*d_outTopTextureWidth + x;
+		float dis = distance(leftEdgePos, realPos, eoc_pos);
+		d_cudaTopTexture[index] = make_float4(-dis, realPos.x, realPos.y, realPos.z);
+		//printf("y:%d,realpos(%f,%f,%f)\n", y, realPos.x, realPos.y, realPos.z);
+		int originMappos = y*d_imageWidth + accumIndex - lenght;
+		d_map_buffer[originMappos].y = y;
+		d_map_buffer[originMappos].z = noteIndex;
+		accumIndex++;
+	}
+}
+__device__ void FillVolumnTop(int beginY, int endY, int x, int endUv, int leftEdge)
+{
+	int top = min(endY, d_outTopTextureHeight);
+	//printf("volumn begin:%d,end:%d,top:%d\n",beginX,endX,top);
+	float3 beforePos = make_float3(tex2D(cudaPosTex, x, endUv - 1));
+	//printf("beforePos(%d,%d)", x, endUv - 1);
+	float3 endPos = make_float3(tex2D(cudaPosTex, x, endUv));
+	//printf("endPos(%d,%d)", x, endUv );
+	float3 leftEdgePos = make_float3(tex2D(cudaPosTex, x, leftEdge + 1));
+	//printf("endPos:(%f,%f,%f)\n", endPos.x, endPos.y, endPos.z);
+	///printf("beforePos:(%f,%f,%f)\n", beforePos.x, beforePos.y, beforePos.z);
+	//printf("leftEdgePos:(%f,%f,%f)\n", leftEdgePos.x, leftEdgePos.y, leftEdgePos.z);
+	//printf("camera:(%f,%f,%f)\n", d_cameraPos.x, d_cameraPos.y, d_cameraPos.z);
+	float3 ecoCamera = d_eocTopPos;
+	//printf("eoc:(%f,%f,%f)\n", ecoCamera.x, ecoCamera.y, ecoCamera.z);
+
+	//for (int i = 0; i < 4; i++)
+	//	printf("(%f,%f,%f,%f)\n", d_modelView[4 * i + 0], d_modelView[4 * i + 1], d_modelView[4 * i + 2], d_modelView[4 * i + 3]);
+	for (int y = beginY; y < top; y++)
+	{
+		float ratio = (y * 1.0f - beginY*1.0f) / (top - 1 - beginY);
+		float3 realPos = projective_interpo(beforePos, endPos, d_modelView, ratio);
+		int index = y*d_outTopTextureWidth + x;
+		float dis = distance(leftEdgePos, realPos, ecoCamera);
+		//printf("y:%d,realpos(%f,%f,%f)\n", y, realPos.x, realPos.y, realPos.z);
+
+		d_cudaTopTexture[index] = make_float4(-dis, realPos.x, realPos.y, realPos.z);
+	}
+}
+__device__ void FillSpanTop(int beginY, int endY, int x, float2 beginUv, float2 endUv)
+{
+	int top = min(endY, d_outTopTextureHeight);
+	//printf("fill from %d to %d at line %d", beginY, endY, x);
+	//printf("begin(%f,%f),end(%f,%f),d_outTextureWidth:%d\n", beginUv.x, beginUv.y, endUv.x, endUv.y, d_outTextureWidth);
+	//printf("endY:%d,d_outTopTextureHeight:%d,top:%d\n", endY, d_outTopTextureHeight, top);
+
+	for (int y = beginY; y <= top; y++)
+	{
+		int index = y*d_outTopTextureWidth + x;
+		float uvy = beginUv.y + (endUv.y - beginUv.y)*(y - beginY) / (top - beginY);
+		d_cudaTopTexture[index] = FillPoint(beginUv.x - 0.5, uvy - 0.5);//tex2D(cudaColorTex, beginUv.x, uvy);
+	}
+}
+//beginUv 记录的是 toUv(index, texBegin), toUv(index, texEnd) 整数
+__device__ void FillSpanTop(int beginY, int endY, int x, float2 beginUv, float2 endUv, int* accumIndexX) //beginUv 用了toUv函数
+{
+	int top = min(endY, d_outTextureWidth - 1);
+	for (int y = beginY; y <= top; y++)
+	{
+		int index = y*d_outTopTextureWidth + x;
+		float uvy = beginUv.y + (endUv.y - beginUv.y)*(y - beginY) / (top - beginY);
+		d_cudaTopTexture[index] = FillPoint(beginUv.x , uvy );//tex2D(cudaColorTex, beginUv.x, uvy);
+
+		//printf("write uv(%f,%f)\n",uvx,beginUv.y);
+		//记录映射关系
+		int originMappos = y*d_imageWidth + *accumIndexX;
+		//printf("y:%d,mappedPos:%d\n", y, *accumIndexX);
+		d_map_buffer[originMappos].x = y;
+		*accumIndexX += 1;
+	}
+}
+
+// 在第y 行的beginX 到endX直接记录中空的区域的位置信息leftEdge是用来评估左边边界，endUv是用来算左右两边的深度插值
+
 // 在第y 行的beginX 到endX闭区间 的这一块区域插入原来图像从beginUV到endUV的这一横条图像accumIndexX 记录原来图像到新图像的映射
 __device__ void FillSpan(int beginX, int endX, int y, float2 beginUv, float2 endUv, int* accumIndexX) //beginUv 用了toUv函数
 {
@@ -817,7 +829,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	int y = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
 	if (y > kernelHeight)
 		return;
-	//if (y != 837)
+	//if (y != 813)
 	//	return;
 	int listIndex = y;
 	int rowLength = d_imageWidth;
@@ -848,7 +860,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 		}*/
 		int noteIndex = currentNote.nextPt;
 		currentNote = d_listBuffer[currentNote.nextPt];
-		//	printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
+		//printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
 		texEnd = currentNote.endIndex;
 		span = currentNote.endIndex - currentNote.beginIndex + 1;
 		leftEdgeIndex = currentNote.leftEdge;
@@ -865,18 +877,92 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 
 
 }
+
+__global__ void renderToTexutreTop(int kernelWidth, int kernelHeight)
+{
+	const int index = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
+	if (index > kernelWidth)
+		return;
+	if (index > d_imageWidth)
+	{
+		FillLine(index);
+		return;
+	}
+	//if (index != 305)
+	//	return;
+	int listIndex = index;
+	int rowLength = d_imageWidth;
+	ListNote currentNote = *((ListNote*)&d_cudaPboTopBuffer[listIndex]);
+	int texEnd = 0;
+	int texBegin = 0;
+	int fillBegin = 0;
+	int fillEnd = 0;
+	int acuumPixel = 0, span = 0;
+	//printf("begin:%d,end%d,index:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt);
+	/*while (currentNote.nextPt != 0)
+	{
+	currentNote = d_listBuffer[currentNote.nextPt];
+	rowLength += currentNote.endIndex - currentNote.beginIndex;
+	//printf("begin:%d,end%d,index:%d,length:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt,rowLength);
+	}*/
+	//printf("printf:%d\n", rowLength);
+	int accum_index = 0;  // 记录累计
+	float factor = d_imageWidth*1.0 / rowLength;
+	currentNote = *((ListNote*)&d_cudaPboTopBuffer[listIndex]);
+	int leftEdgeIndex = 0;
+	while (currentNote.nextPt != 0)
+	{
+
+		int noteIndex = currentNote.nextPt;
+		currentNote = d_listBuffer_top[currentNote.nextPt];
+		//printf("current:b:%d,e:%d,n:%d,leftEdge:%d\n", currentNote.beginIndex, currentNote.endIndex, currentNote.nextPt, currentNote.leftEdge);
+
+		texEnd = currentNote.endIndex;
+		span = currentNote.endIndex - currentNote.beginIndex + 1;
+		leftEdgeIndex = currentNote.leftEdge;
+		fillBegin = texBegin + acuumPixel;
+		fillEnd = texEnd + acuumPixel;
+		//printf("accum_index:%d,accum_index:%d,n:%d\n", accum_index, accum_index);
+		//FillSpanTop(fillBegin*factor, fillEnd*factor, index, toUv(index, texBegin), toUv(index, texEnd));  //for 循环，左闭右开
+		//FillVolumnTop((fillEnd)*factor, (fillEnd + span)*factor, index, texEnd, leftEdgeIndex);
+		FillSpanTop(fillBegin*factor, fillEnd*factor, index, toUv(index, texBegin), toUv(index, texEnd), &accum_index);  //内层 for 循环，左闭右闭
+		//printf("accum_index:%d\n", accum_index);
+
+		FillVolumnTop((fillEnd + 1)*factor, (fillEnd + span)*factor, index, texEnd + 1, leftEdgeIndex, accum_index, noteIndex);//内层 for 循环，左闭右闭
+	
+		
+
+		acuumPixel += span;
+		texBegin = currentNote.endIndex+1;
+
+		//printf("texBegin:%d,acuumPixel:%d,n:%d\n", texBegin, acuumPixel);
+
+	}
+	fillBegin = texBegin + acuumPixel;
+	//printf("final:(%d,%d) u(%f,%f)\n", fillBegin, d_imageWidth + span, toUv(index, texBegin).y, toUv(index,d_imageWidth).y);
+	//FillSpanTop(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, index, toUv(index, texBegin), toUv(index, d_imageWidth - 1));
+	FillSpanTop(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, index, toUv(index, texBegin), toUv(index, d_imageWidth - 1), &accum_index);
+	
+
+}
 ListNote *device_data, *device_top_data = NULL;
 int atomBuffer = 1; // 原子计数从1开始，0作为空节点标识位
+int atomBufferTop = 1;
 #ifdef DEBUG
 ListNote *host_data = NULL;
 #endif
 extern void cudaInit(int height, int width, int k, float rowLarger)
 {
 	checkCudaErrors(cudaMalloc(&device_data, height*k*sizeof(ListNote)));
+	checkCudaErrors(cudaMalloc(&device_top_data, ROWLARGER*width*k*sizeof(ListNote)));
 
 	checkCudaErrors(cudaMemcpyToSymbol(d_listBuffer, &device_data, sizeof(ListNote*)));
+	checkCudaErrors(cudaMemcpyToSymbol(d_listBuffer_top, &device_top_data, sizeof(ListNote*)));
+
 
 	checkCudaErrors(cudaMemcpyToSymbol(d_atomic, &atomBuffer, sizeof(int)));
+
+	checkCudaErrors(cudaMemcpyToSymbol(d_atomic_top, &atomBufferTop, sizeof(int)));
 	checkCudaErrors(cudaMemset(device_data, 0, height*k*sizeof(ListNote)));
 	//checkCudaErrors(cudaMemset(cuda_TexturePbo_buffer, 0, width* height*rowLarger*sizeof(float4)));
 #ifdef DEBUG
@@ -889,6 +975,7 @@ extern void cudaInit(int height, int width, int k, float rowLarger)
 	checkCudaErrors(cudaMalloc(&proj_inv, 16 * sizeof(float)));
 
 	checkCudaErrors(cudaMalloc(&modelViewRight, 16 * sizeof(float)));
+	checkCudaErrors(cudaMalloc(&modelViewTop, 16 * sizeof(float)));
 
 	checkCudaErrors(cudaMalloc(&cuda_map_buffer, width*height * sizeof(float4)));
 	checkCudaErrors(cudaMemcpyToSymbol(d_map_buffer, &cuda_map_buffer, sizeof(float*)));
@@ -936,6 +1023,10 @@ extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocC
 	checkCudaErrors(cudaMemcpyToSymbol(d_modelViewRight, &modelViewRight, sizeof(float*)));
 
 
+	checkCudaErrors(cudaMemcpy(modelViewTop, pEocTopCamera->getModelViewMat(), 16 * sizeof(float), cudaMemcpyHostToDevice));
+	checkCudaErrors(cudaMemcpyToSymbol(d_modelViewTop, &modelViewTop, sizeof(float*)));
+
+
 	cudaEvent_t begin_t, end_t;
 	checkCudaErrors(cudaEventCreate(&begin_t));
 	checkCudaErrors(cudaEventCreate(&end_t));
@@ -956,8 +1047,8 @@ extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocC
 	renderToTexutre << <gridSize, blockSize >> >(1, height);
 	/**/
 	//top Camera
-	//checkCudaErrors(cudaMemcpyToSymbol(d_atomic, &atomBuffer, sizeof(int)));
-	//checkCudaErrors(cudaMemset(cuda_PBO_Buffer, 0, height*sizeof(ListNote)));
+	checkCudaErrors(cudaMemcpyToSymbol(d_atomic_top, &atomBufferTop, sizeof(int)));
+	checkCudaErrors(cudaMemset(cuda_PBO_Top_Buffer, 0, ROWLARGER*height*sizeof(ListNote)));
 
 	dim3 gridSizeT(1, ROWLARGER* width / blockSize.y, 1);
 	countRowKernelTop << <gridSizeT, blockSize >> >(width, 1);
@@ -1046,6 +1137,11 @@ extern "C" void cudaRelateArray(CudaPboResource * pResource)
 	{
 		checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&cuda_PBO_Buffer, &numBytes, *pCudaTex));
 		checkCudaErrors(cudaMemcpyToSymbol(d_cudaPboBuffer, &cuda_PBO_Buffer, sizeof(ListNote*)));
+	}
+	else if (list_top_e == pResource->getType())
+	{
+		checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void**)&cuda_PBO_Top_Buffer, &numBytes, *pCudaTex));
+		checkCudaErrors(cudaMemcpyToSymbol(d_cudaPboTopBuffer, &cuda_PBO_Top_Buffer, sizeof(ListNote*)));
 	}
 	else if (to_optix_t == pResource->getType())
 	{

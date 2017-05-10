@@ -2,7 +2,11 @@
 #define SCREEN_HEIGHT 1024
 #define K 8
 #define OPTIX
-#define  dis_orgin  5
+//定义右边相机到eoc相机主相机距离宏
+#define  DIS_ORIGIN_W  5  
+//定义上边相机到eoc相机主相机距离宏
+#define DIS_ORIGIN_H 5
+//定义
 #define  to_flocus  25
 #ifdef OPTIX
 	#define RAYTRACINGPATH "./output/raytracing.ptx"

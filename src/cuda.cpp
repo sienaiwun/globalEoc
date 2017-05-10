@@ -53,10 +53,11 @@ void CudaPboResource::initPbo()
 		glBufferData(GL_PIXEL_UNPACK_BUFFER, m_width*m_height*sizeof(float2), 0, GL_STREAM_READ);
 
 	}
-	else if (m_type == list_e)
+	else if (m_type == list_e || m_type == list_top_e)
 	{
 		glBufferData(GL_PIXEL_UNPACK_BUFFER, m_width*m_height*sizeof(ListNote), 0, GL_STREAM_READ);
 	}
+
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
 }
@@ -76,7 +77,7 @@ void CudaPboResource::initTex()
 }
 void CudaPboResource::generateTex()
 {
-	if (m_type == list_e)
+	if (m_type == list_e||m_type == list_top_e)
 	{
 		// 把list_note不需要转换成纹理
 
@@ -125,7 +126,8 @@ void CudaPboResource::generateTex()
 
 		
 		
-		if (m_type == construct_t)
+	
+		if (m_type == top_float4_t)
 		{
 			
 			glEnable(GL_TEXTURE_2D);
@@ -146,7 +148,7 @@ void CudaPboResource::generateTex()
 			glBindTexture(GL_TEXTURE_2D, 0);
 			
 		}
-
+		
 
 		
 	}

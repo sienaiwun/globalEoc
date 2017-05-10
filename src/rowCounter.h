@@ -48,7 +48,7 @@ private:
 	GLuint *m_data;
 	GLuint m_test;
 	CudaTexResourse *m_colorCudaTex, *m_edgeCudaTex, *m_occluderRightCudaTex, *m_posCudaTex, *m_normalCudaTex ,*m_occluderTopCudaTex;
-	CudaPboResource *m_initArray, *m_OutTex, *m_topOutTex;
+	CudaPboResource *m_initArray, *m_initTopArray, *m_OutTex, *m_topOutTex;
 
 };
 #endif
