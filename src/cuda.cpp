@@ -127,7 +127,7 @@ void CudaPboResource::generateTex()
 		
 		
 	
-		if (m_type == top_float4_t)
+		if (m_type == construct_t)
 		{
 			
 			glEnable(GL_TEXTURE_2D);
