@@ -1,4 +1,3 @@
-
 #include "cuda.h"
 #include <helper_math.h>
 #include <nvMatrix.h>
@@ -279,11 +278,13 @@ __device__ float4 colorTextreNorTc(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
 	int2 mapTx = nearestTc(nonNorTc);
-	int index = mapTx.y * d_imageWidth + mapTx.x;
+	int index = mapTx.y * d_outTextureWidth + mapTx.x;
 	int mappedX = (int)(d_map_buffer[index].x + 0.5);
-
-	//printf("mapped tc:(%d,%f),z:(%f)\n", mappedX, nonNorTc.y, tex2D(optixColorTex, nonNorTc.x, nonNorTc.y).z);
-	return tex2D(optixColorTex, mappedX, nonNorTc.y);
+	int secondIndex = mapTx.y * d_outTextureWidth + mappedX;
+	//my_printf("coord:(%d,%d),secondIndex:%d\n", mappedX, mapTx.y, secondIndex);
+	int mappedY = (int)(d_map_buffer[secondIndex].z + 0.5);
+	//my_printf("mapped tc:( mappedX:%d, nonNorTc:%f),z:(%f),mappedY:%d\n", mappedX, nonNorTc.y, tex2D(optixColorTex, nonNorTc.x, nonNorTc.y).z, mappedY);
+	return tex2D(optixColorTex, mappedX, mappedY);
 }
 __device__ int getNoteIndex(float2 tc)
 {
@@ -302,7 +303,7 @@ __device__ bool isOccluedeArea(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
 	int2 mapTx = nearestTc(nonNorTc);
-	int index = mapTx.y * d_imageWidth + mapTx.x;
+	int index = mapTx.y * d_outTextureWidth + mapTx.x;
 	int mappedY = (int)(d_map_buffer[index].y + 0.5);
 	if (mappedY < 1)
 	{
@@ -332,7 +333,7 @@ __device__ int noMappedPosition(float2 tc, int &mappedX,float4& poc)// Õâ¸öÊÇ×ø±
 {
 	float2 nonNorTc = tc;
 	int2 mapTx = nearestTc(nonNorTc);
-	int index = mapTx.y * d_imageWidth + mapTx.x;
+	int index = mapTx.y * d_outTextureWidth + mapTx.x;
     mappedX = (int)(d_map_buffer[index].y + 0.5);
 	my_printf("mapped coord:(%d,%d)\n", mappedX, mapTx.y);
 	poc = tex2D(optixColorTex, mappedX, nonNorTc.y);
@@ -358,11 +359,10 @@ __device__ int linearNoMappedPosition(float2 tc, int eocWidth, EOCPixel & curren
 	{
 		int2 mapTx = nearestTc(nonNorTc);
 	
-		int index = mapTx.y * d_imageWidth + mapTx.x;
+		int index = mapTx.y * d_outTextureWidth + mapTx.x;
 		int mappedX = (int)(d_map_buffer[index].y + 0.5);
 		 oc1 = tex2D(optixColorTex, mappedX, nonNorTc.y);
-		 my_printf("mappedX:%d\n", mappedX);
-
+		 my_printf("tc:(%d,%d),index:%d,mappedX:%d\n",mapTx.x,mapTx.y,index, mappedX);
 		 if (mappedX < 1)
 		 {
 			 return RAYOUT;
@@ -374,11 +374,11 @@ __device__ int linearNoMappedPosition(float2 tc, int eocWidth, EOCPixel & curren
 		int2 neighborTx = neighborTc(nonNorTc);
 		//my_printf("neighborTx:(%d,%d)\n", neighborTx.x, neighborTx.y);
 
-		int neighborindex = neighborTx.y * d_imageWidth + neighborTx.x;
+		int neighborindex = neighborTx.y * d_outTextureWidth + neighborTx.x;
 	
 
 		int neighborMappedX = (int)(d_map_buffer[neighborindex].y + 0.5);
-		my_printf("neighborMappedX:%d\n", neighborMappedX);
+		//my_printf(" neighborMappedX:%d\n", neighborMappedX);
 
 		oc2 = tex2D(optixColorTex, neighborMappedX, nonNorTc.y);
 		if (neighborMappedX < 1)
@@ -731,14 +731,14 @@ __device__ void FillVolumn(int beginX, int endX, int lineNum, int endUv, int lef
 			int index = lineNum*d_outTextureWidth + i;
 			d_cudaTexture[index] = make_float4(dis, realPos.x, realPos.y, realPos.z);
 			//printf("x:%d,realpos(%f,%f,%f)\n", x, realPos.x, realPos.y, realPos.z);
-			int originMappos = lineNum*d_imageWidth + accumIndex - lenght;
+			int originMappos = lineNum*d_outTextureWidth + accumIndex - lenght;  //ÊÇ´ÓÀ©´óµÄÐÐÊýÓ³Éäµ½Ö®Ç°µÄÐÐÊý
 			d_map_buffer[originMappos].y = i;
 		}
 		else
 		{
 			int index = i*d_outTopTextureWidth + lineNum;
 			d_cudaTopTexture[index] = make_float4(-dis, realPos.x, realPos.y, realPos.z);
-			int originMappos = i*d_imageWidth + accumIndex - lenght;
+			int originMappos = (accumIndex - lenght)*d_outTextureWidth + lineNum;
 			//d_map_buffer[originMappos].y = i;
 			d_map_buffer[originMappos].w = i;
 		}
@@ -748,9 +748,9 @@ __device__ void FillVolumn(int beginX, int endX, int lineNum, int endUv, int lef
 
 // ÔÚµÚy ÐÐµÄbeginX µ½endX±ÕÇø¼ä µÄÕâÒ»¿éÇøÓò²åÈëÔ­À´Í¼Ïñ´ÓbeginUVµ½endUVµÄÕâÒ»ºáÌõÍ¼ÏñaccumIndexX ¼ÇÂ¼Ô­À´Í¼Ïñµ½ÐÂÍ¼ÏñµÄÓ³Éä
 template <bool isRight>
-__device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int endUvI, int* accumIndexX) //beginUv ÓÃÁËtoUvº¯Êý
+__device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int endUvI, int& accumIndexX) //beginUv ÓÃÁËtoUvº¯Êý
 {
-	float beginUv = beginUvI + 0.5;
+		float beginUv = beginUvI + 0.5;
 	float endUv = endUvI + 0.5;
 
 	int top, index, originMappos;
@@ -765,7 +765,7 @@ __device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int en
 		{
 			index = lineNum*d_outTextureWidth + i;
 			d_cudaTexture[index] = tex2D(cudaColorTex, uvx, lineNum);
-			originMappos = lineNum*d_imageWidth + *accumIndexX;
+			originMappos = lineNum*d_outTextureWidth + accumIndexX;
 			d_map_buffer[originMappos].x = i;
 
 		}
@@ -773,7 +773,7 @@ __device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int en
 		{
 			index = i*d_outTopTextureWidth + lineNum;
 			d_cudaTopTexture[index] = FillPoint(lineNum, uvx);
-			originMappos = i*d_imageWidth + *accumIndexX;
+			originMappos = (accumIndexX) *d_outTextureWidth + lineNum;
 			d_map_buffer[originMappos].z = i;
 
 		}
@@ -781,7 +781,7 @@ __device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int en
 		//printf("write uv(%f,%f)\n",uvx,beginUv.y);
 		//¼ÇÂ¼Ó³Éä¹ØÏµ
 		//printf("x:%d,mappedPos:%d\n", x, *accumIndexX);
-		*accumIndexX += 1;
+		accumIndexX += 1;
 	}
 
 }
@@ -790,22 +790,20 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 // ÊúÐèÒª¸Ä¶¯
 {
 	int index = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
-
+	if (index > kernelHeight)
+		return;
 	//if (y != 813)
 	//	return;
 	uint3* headBuffer;
 	ListNote* listBuffer;
 	if (isRight)
 	{
-		if (index > kernelHeight)
-			return;
+		
 		headBuffer = d_cudaPboBuffer;
 		listBuffer = d_listBuffer;
 	}
 	else
 	{
-		if (index > kernelWidth)
-			return;
 		headBuffer = d_cudaPboTopBuffer;
 		listBuffer = d_listBuffer_top;
 	}
@@ -849,14 +847,14 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 		leftEdgeIndex = currentNote.leftEdge;
 		fillBegin = texBegin + acuumPixel;
 		fillEnd = texEnd + acuumPixel;
-		FillSpan<isRight>(fillBegin*factor, fillEnd*factor, index, texBegin, texEnd, &accum_index);  //ÄÚ²ã for Ñ­»·£¬×ó±ÕÓÒ±Õ
+		FillSpan<isRight>(fillBegin*factor, fillEnd*factor, index, texBegin, texEnd, accum_index);  //ÄÚ²ã for Ñ­»·£¬×ó±ÕÓÒ±Õ
 		FillVolumn<isRight>((fillEnd + 1)*factor, (fillEnd + span)*factor, index, texEnd + 1, leftEdgeIndex, accum_index, noteIndex);//ÄÚ²ã for Ñ­»·£¬×ó±ÕÓÒ±Õ
 		acuumPixel += span;
 		texBegin = currentNote.endIndex + 1;
 	}
 	fillBegin = texBegin + acuumPixel;
 	//printf("final:(%d,%d) u(%f,%f)\n", fillBegin, d_imageWidth + span, toUv(texBegin, y).x, toUv(d_imageWidth - 1, y).x);
-	FillSpan<isRight>(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, index, texBegin, d_imageWidth - 1, &accum_index);
+	FillSpan<isRight>(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, index, texBegin, d_imageWidth - 1, accum_index);
 
 
 }
@@ -967,7 +965,7 @@ extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEocC
 
 	dim3 gridSizeT(1, ROWLARGER* width / blockSize.y, 1);
 	countRowKernelTop << <gridSizeT, blockSize >> >(width, 1);
-	renderToTexutre <false> << <gridSizeT, blockSize >> >(ROWLARGER*width, 1);
+	renderToTexutre <false> << <gridSizeT, blockSize >> >(1, ROWLARGER*width);
 
 	checkCudaErrors(cudaEventDestroy(begin_t));
 	checkCudaErrors(cudaEventDestroy(end_t));
@@ -1398,6 +1396,7 @@ __device__ int intersectCameraIDH(float3 posW, float3 directionW, float3 cameraP
 }
 
 //Èç¹û²»ÊÇÒ»¸öID,·µ»ØOHTEROBJECT£¬Èç¹ûÓÐ½»µã·µ»ØINTERSECT£¬Ã»ÓÐ½»µã·µ»ØMISSINGNOTE£¬returnToMainC¼ÇÂ¼ÊÇÊÇ·ñÓÐ·ÇÈßÓàÖµ
+template <bool isRight>
 __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int yIndex, bool isRayUp, int occludedObjId, 
 	float* modelView,// ²éÑ¯modelView Ïà»úÏÂµÄÉî¶È
 	bool& returnToMainC, EOCPixel &lastPixel, float4& intersectColor, float2& exitTC, float3& exitWorldPos)
@@ -1523,67 +1522,7 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 
 }
 // ¼ì²éÔÚobjectIdËù´ú±íµÄÕÚµ²ÎïÏÂÃæµÄÇó½»½á¹ûÒªÃ´·µ»ØNOOBJECTNOTE£¬Ã»ÓÐÕÒµ½IDÒ»ÑùµÄÒªÃ´·µ»Ømisiing Ã»½¹µã
-__device__ int isIntersectLineWithObjectIdH(float3 posW, float3 directionW, float3 cameraPos, int lineNum, bool isRayUp, int occudedObjId,
-	float* modelView, bool& returnTomain, EOCPixel &previousPixel, float3& outPos, float4& resultColor)
-{
-	ListNote currentNote = *((ListNote*)&d_cudaPboTopBuffer[lineNum]);
-
-	//printf("Render:next %d end:%d begin:%d,\n", currentNote.nextPt, currentNote.endIndex, currentNote.beginIndex);
-	my_printf("testLine num:%d\n", lineNum);
-	int leftEdgeIndex = 0;
-	bool hasObjectNote = false;
-	/*if (lineNum < 698)
-	{
-	return NOOBJECTNOTE;
-	}*/
-	while (currentNote.nextPt != 0)
-	{
-		int noteIndex = currentNote.nextPt;
-		currentNote = d_listBuffer_top[currentNote.nextPt];
-
-
-		//printf("intersect with a line\n");
-		float2 _;
-		//Èç¹û²»ÊÇÒ»¸öID,·µ»ØOHTEROBJECT£¬Èç¹ûÓÐ½»µã·µ»ØINTERSECT£¬Ã»ÓÐ½»µã·µ»ØMISSINGNOTE£¬returnToMainC¼ÇÂ¼ÊÇÊÇ·ñÓÐ·ÇÈßÓàÖµ
-		int result = intersectCameraIDW(posW, directionW, cameraPos, currentNote, lineNum, isRayUp, occudedObjId, modelView, returnTomain, previousPixel, resultColor, _, outPos);
-
-		if (result != OHTEROBJECT)
-		{
-			//Èç¹ûÕÒµ½ÁËÏàÍ¬obj
-			//printf("obj found\n");
-			hasObjectNote = true;
-		}
-		if (INTERSECT == result)
-		{
-			return INTERSECT;
-		}
-		else if (currentNote.nextPt == 0)
-		{
-			//×îºóÒ»¸ö½Úµã
-			break;
-		}
-		else if (OHTEROBJECT == result || MISSINGNOTE == result)
-		{
-			//test other note in the same line
-			currentNote = *((ListNote*)&d_cudaPboTopBuffer[currentNote.nextPt]);
-		}
-		else if (OUTOCCLUDED == result)
-		{
-			break;
-		}
-	}
-
-	if (hasObjectNote)
-	{
-		//·µ»ØÃ»ÓÐÊÕµ½
-
-		my_printf("return MISSINGNOTE\n");
-		return MISSINGNOTE;
-	}
-	my_printf("return NOOBJECTNOTE\n");
-	return NOOBJECTNOTE;
-}
-// ¼ì²éÔÚobjectIdËù´ú±íµÄÕÚµ²ÎïÏÂÃæµÄÇó½»½á¹ûÒªÃ´·µ»ØNOOBJECTNOTE£¬Ã»ÓÐÕÒµ½IDÒ»ÑùµÄÒªÃ´·µ»Ømisiing Ã»½¹µã
+template <bool isRight>
 __device__ int isIntersectLineWithObjectIdW(float3 posW, float3 directionW, float3 cameraPos, int lineNum, bool isRayUp, int occudedObjId,
 	float* modelView, bool& returnTomain, EOCPixel &previousPixel, float3& outPos, float4& resultColor)
 {
@@ -1606,7 +1545,7 @@ __device__ int isIntersectLineWithObjectIdW(float3 posW, float3 directionW, floa
 		//printf("intersect with a line\n");
 		float2 _;
 		//Èç¹û²»ÊÇÒ»¸öID,·µ»ØOHTEROBJECT£¬Èç¹ûÓÐ½»µã·µ»ØINTERSECT£¬Ã»ÓÐ½»µã·µ»ØMISSINGNOTE£¬returnToMainC¼ÇÂ¼ÊÇÊÇ·ñÓÐ·ÇÈßÓàÖµ
-		int result = intersectCameraIDW(posW, directionW, cameraPos, currentNote, lineNum, isRayUp, occudedObjId, modelView, returnTomain, previousPixel, resultColor, _, outPos);
+		int result = intersectCameraIDW<isRight>(posW, directionW, cameraPos, currentNote, lineNum, isRayUp, occudedObjId, modelView, returnTomain, previousPixel, resultColor, _, outPos);
 
 		if (result != OHTEROBJECT)
 		{
@@ -1654,7 +1593,7 @@ __device__ int rayBelowMainTex(float n, int stepN, float2 projStart, float2 inte
 	tc = projStart + interval* n / stepN;
 	float currRayPointZ = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndZ));
 	float currSamplePointZ = colorTextreNorTc(tc).w;
-	my_printf("tc:(%f,%f),n:%f,stepN:%d,z:(%f,%f)\n", 1024 * tc.x, 1024 * tc.y, n, stepN, currRayPointZ, currSamplePointZ);
+	//my_printf("tc:(%f,%f),n:%f,stepN:%d,z:(%f,%f)\n", 1024 * tc.x, 1024 * tc.y, n, stepN, currRayPointZ, currSamplePointZ);
 	if (tc.x>(1 - 1.0 / d_imageWidth) || tc.x<(1.0 / d_imageWidth) || tc.y<(1.0 / d_imageHeight) || tc.y>(1.0 - 1.0 / d_imageHeight) || currSamplePointZ > 0)
 	{
 		return 0;
@@ -1737,6 +1676,7 @@ __device__ float3 startPointOfTex(float2 projStart, float2 projEnd, float raySta
 	return make_float3(projStart, rayStartz);
 
 }
+template <bool isRight>
 __device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, float2 tc, float2 lastTc, float3 eocPos, float &n, int stepN, float4& oc, int& outLineId)
 {
 	//
@@ -1757,7 +1697,7 @@ __device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, 
 	EOCPixel lastPicel(RAYISUP, 0.0f);
 	lastPicel.m_isValid = true;
 	//EOCPixel lastPicel(RAYBEGIN, 0.0f);
-	int result = isIntersectLineWithObjectIdW(posW, directionW, eocPos, startLineNum, isUp, objectId, d_modelViewRight, returntoMain, lastPicel, outPos, oc);
+	int result = isIntersectLineWithObjectIdW<isRight>(posW, directionW, eocPos, startLineNum, isUp, objectId, d_modelViewRight, returntoMain, lastPicel, outPos, oc);
 	int lineId = startLineNum + (isUp ? 1 : -1);// lineId ´æ´¢µÄÊÇÒªËÑË÷µÄÏÂÒ»ÐÐ
 	outLineId = startLineNum;
 	if (false == returntoMain)
@@ -1769,7 +1709,7 @@ __device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, 
 	while (result == MISSINGNOTE)// Èç¹ûÕâÒ»ÁÐÖÐÃ»ÓÐÇó½»µ½MISS,²¢ÇÒÃ»ÓÐ·¢Éú
 	{
 
-		result = isIntersectLineWithObjectIdW(posW, directionW, d_eocPos, lineId, isUp, objectId, d_modelViewRight, returntoMain, lastPicel, outPos, oc);
+		result = isIntersectLineWithObjectIdW<isRight>(posW, directionW, d_eocPos, lineId, isUp, objectId, d_modelViewRight, returntoMain, lastPicel, outPos, oc);
 		lineId = lineId + (isUp ? 1 : -1);
 		n += (float)stepN / stepY;
 
@@ -1895,7 +1835,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 			if (isRightEdge(lastTc) && isOccluedeArea(tc))// Èç¹ûµ¹ÊýµÚ¶þ¸öÊÇÔÚ±ßºáÑØÉÏ£¬Ò²¾ÍÊÇ½øÈëÕÚµ²Ìå
 			{
 				int outLineId;
-				int result = intersetctWithW(posW, directionW, interval, tc, lastTc, d_eocPos, n, stepN, oc, outLineId);
+				int result = intersetctWithW<true>(posW, directionW, interval, tc, lastTc, d_eocPos, n, stepN, oc, outLineId);
 				if (result == INTERSECT)
 				{
 					my_printf("addition note intersect\n");
@@ -1947,7 +1887,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 457 || y != 853	)
+	if (x != 667 || y != 483	)
 	   return;
 #endif
 	//if ( y <100)
@@ -2021,12 +1961,12 @@ __global__ void EocEdgeKernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 649 || y != 774)
-		return;
+	//if (x != 649 || y != 774)
+	//	return;
 #endif
 	if (eocIsRight(x, y) && eocIsRight(x - 1, y) && eocIsRight(x + 1, y))
 	{
-		my_printf("center edge\n");
+		//my_printf("center edge\n");
 		d_edge_buffer[y*kernelWidth + x] = isEocRightEdge(x - 1, x, x + 1, y,ISMIDDLE);
 	}
 	else if  (eocIsRight(x, y) && eocIsRight(x +1 , y) && eocIsRight(x + 2, y))
