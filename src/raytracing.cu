@@ -45,7 +45,7 @@ rtDeclareVariable(optix::Matrix4x4, optixModeView_Inv, , );
 rtDeclareVariable(float2, resolution, , );
 
 rtDeclareVariable(optix::Matrix4x4, rightModelView, , );
-
+rtDeclareVariable(optix::Matrix4x4, topModelView, , );
 rtDeclareVariable(optix::Matrix4x4, optixModelView, , );
 struct PerRayData_shadow
 {
@@ -66,13 +66,28 @@ __device__ float3 getImagePos(float2 tc)
 	return make_float3(temp.x, temp.y, temp.z);
 }
 //返回正的Z值
+template <bool isRight>
 __device__ float chanelToWrite(float3 worldPos)
 { 
 	if (worldPos.x < -1000 && worldPos.y < -1000 && worldPos.z < -1000)
 		return 999999;
-	float3 rightCameraToWorldPos = worldPos - eoc_eye_right_pos;
-	float dis = dot(rightCameraToWorldPos, rightND);
-	float4 temp = make_float4(worldPos, 1)*rightModelView;
+	float3 eocPos,ND;
+	optix::Matrix4x4 eocModelView;
+	if (isRight)
+	{
+		eocPos = eoc_eye_right_pos;
+		ND = rightND;
+		eocModelView = rightModelView;
+	}
+	else
+	{
+		eocPos = eoc_eye_top_pos;
+		ND = topND;
+		eocModelView = topModelView;
+	}
+	float3 rightCameraToWorldPos = worldPos - eocPos;
+	float dis = dot(rightCameraToWorldPos, ND);
+	float4 temp = make_float4(worldPos, 1)*eocModelView;
 	return -temp.z;
 }
 
@@ -102,7 +117,7 @@ RT_PROGRAM void shadow_request()
 		rtTrace(reflectors, ray, prd);
 		result_buffer[launch_index] = make_float4(prd.attenuation,1);
 		result_buffer[launch_index].z =( result_buffer[launch_index].z +3 )/4;
-		result_buffer[launch_index].w = chanelToWrite(prd.worldPos);
+		result_buffer[launch_index].w = chanelToWrite<true>(prd.worldPos);
 		position_buffer[launch_index] = make_float4(prd.worldPos, 1);
 		return;
 	}
@@ -122,7 +137,7 @@ RT_PROGRAM void shadow_request()
 		float3 worldPos = ray_origin + ray_direction*prd.t_hit;
 		float3 topCameraToWorldPos = worldPos - eoc_eye_top_pos;
 		float dis = dot(topCameraToWorldPos, topND);
-		result_buffer[launch_index].w = -dis;
+		result_buffer[launch_index].w = chanelToWrite<false>(prd.worldPos);;
 		position_buffer[launch_index] = make_float4(worldPos, 1);
 		return;
 	}

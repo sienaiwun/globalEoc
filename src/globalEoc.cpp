@@ -228,6 +228,8 @@ void EOCrender::optixTracing()
 		m_rtContext["rightND"]->setFloat(getRightND().x, getRightND().y, getRightND().z);
 		m_rtContext["topND"]->setFloat(getTopD().x, getTopD().y, getTopD().z);
 		m_rtContext["rightModelView"]->setMatrix4x4fv(false, p_right_Eoc_camera->getModelViewMat());
+		m_rtContext["topModelView"]->setMatrix4x4fv(false, pTopEoc_camera->getModelViewMat());
+
 		m_rtContext->launch(0, cudaTexWidth, cudaTexHeight);
 	}
 	catch (optix::Exception& e)

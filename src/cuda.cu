@@ -124,7 +124,7 @@ __device__ float4* d_map_buffer;  //d_map_buffer x ¼ÇÂ¼µÄÊÇtexture µ½ÐÂµÄtexture
 float4* cuda_map_buffer;
 #define EOC_RIGHT_EDGE_VALID 1
 #define EOC_RIGHT_TOP_VALID 2
-struct edgeInfo
+struct edgeInfo //¼ÇÂ¼À©Õ¹ÇøÓòµÄµØ·½ÊÇ·ñÊÇedge£¬´Ó¶øÅÐ¶Ï²åÖµÓÐÐ§ÐÔ
 {
 	bool isRightEdge;
 	float dzdx;
@@ -256,12 +256,23 @@ __device__ int2 nearestTc(float2 tc)
 {
 	return make_int2(tc.x, tc.y);//Ö±½Ó½øÐÐint×ª»»£¬ÒòÎª¼õÈ¥0.5+0.5
 }
+template <bool isRight>
 __device__ int2 neighborTc(float2 tc)
 {
-	if (tc.x - floor(tc.x) > 0.5)
-		return make_int2(tc.x + 1, tc.y);
+	if (isRight)
+	{
+		if (tc.x - floor(tc.x) > 0.5)
+			return make_int2(tc.x + 1, tc.y);
+		else
+			return make_int2(tc.x - 1, tc.y);
+	}
 	else
-		return make_int2(tc.x - 1, tc.y);
+	{
+		if (tc.y - floor(tc.y) > 0.5)
+			return make_int2(tc.x, tc.y + 1);
+		else
+			return make_int2(tc.x, tc.y - 1);
+	}
 }
 //¼ÆËã
 __device__ float linarRatio(float x)
@@ -299,13 +310,24 @@ __device__ int getNoteIndex(float2 tc)
 	return noteId;
 }
 
+template <bool isRight>
 __device__ bool isOccluedeArea(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
 	int2 mapTx = nearestTc(nonNorTc);
 	int index = mapTx.y * d_outTextureWidth + mapTx.x;
-	int mappedY = (int)(d_map_buffer[index].y + 0.5);
-	if (mappedY < 1)
+	int mappedT;
+	if (isRight)
+	{
+		mappedT = (int)(d_map_buffer[index].y + 0.5);
+
+	}
+	else
+	{
+		mappedT = (int)(d_map_buffer[index].w + 0.5);
+
+	}
+	if (mappedT < 1)
 	{
 		//printf("not occluded\n");
 		return false;
@@ -349,43 +371,56 @@ __device__ int noMappedPosition(float2 tc, int &mappedX,float4& poc)// Õâ¸öÊÇ×ø±
 	return RAYVALID;
 
 }
-
-__device__ int linearNoMappedPosition(float2 tc, int eocWidth, EOCPixel & currentPixel, float4& oc)
+template <bool isRight>
+__device__ int linearNoMappedPosition(float2 tc, EOCPixel & currentPixel, float4& oc)  //ÊÖ¹¤½øÐÐeocÇøÓòµÄÏßÐÔ²åÖµ
 {
+	
 	float2 nonNorTc = tc;
 	float4 oc1,oc2;
+	float ratio;
 	my_printf("tc:(%f,%f)\n", tc.x, tc.y);
 	bool centerisAtEdge,neighberIsAtEdge;
+	int2 mapTx = nearestTc(nonNorTc);
+	int2 neighborTx = neighborTc<isRight>(nonNorTc); // ÕÒµ½ÐèÒª²åÖµµÄÏñËØ
+	int index, firstMapped, neighborIndex, neighborMappedX;
+	if (isRight)
 	{
-		int2 mapTx = nearestTc(nonNorTc);
-	
-		int index = mapTx.y * d_outTextureWidth + mapTx.x;
-		int mappedX = (int)(d_map_buffer[index].y + 0.5);
-		 oc1 = tex2D(optixColorTex, mappedX, nonNorTc.y);
-		 my_printf("tc:(%d,%d),index:%d,mappedX:%d\n",mapTx.x,mapTx.y,index, mappedX);
-		 if (mappedX < 1)
-		 {
-			 return RAYOUT;
-		 }
-		 centerisAtEdge = d_edge_buffer[mapTx.y*eocWidth + mappedX].isRightEdge;
-		
-	}
-	{
-		int2 neighborTx = neighborTc(nonNorTc);
-		//my_printf("neighborTx:(%d,%d)\n", neighborTx.x, neighborTx.y);
-
-		int neighborindex = neighborTx.y * d_outTextureWidth + neighborTx.x;
-	
-
-		int neighborMappedX = (int)(d_map_buffer[neighborindex].y + 0.5);
-		//my_printf(" neighborMappedX:%d\n", neighborMappedX);
-
-		oc2 = tex2D(optixColorTex, neighborMappedX, nonNorTc.y);
-		if (neighborMappedX < 1)
+		index = mapTx.y * d_outTextureWidth + mapTx.x;
+		firstMapped = (int)(d_map_buffer[index].y + 0.5);
+		neighborIndex = neighborTx.y * d_outTextureWidth + neighborTx.x;
+		neighborMappedX = (int)(d_map_buffer[neighborIndex].y + 0.5);
+		if (firstMapped < 1 || neighborMappedX<1) 
 		{
 			return RAYOUT;
 		}
-		neighberIsAtEdge = d_edge_buffer[neighborTx.y*eocWidth + neighborindex].isRightEdge;
+		oc1 = tex2D(optixColorTex, firstMapped, nonNorTc.y);
+		oc2 = tex2D(optixColorTex, neighborMappedX, nonNorTc.y);
+		const int eocWidth = d_imageWidth*ROWLARGER;
+		centerisAtEdge = d_edge_buffer[mapTx.y*eocWidth + firstMapped].isRightEdge;
+		neighberIsAtEdge = d_edge_buffer[neighborTx.y*eocWidth + neighborMappedX].isRightEdge;
+	}
+	else
+	{
+		index = mapTx.y * d_outTextureWidth + mapTx.x;
+		firstMapped = (int)(d_map_buffer[index].w + 0.5);
+		neighborIndex = neighborTx.y * d_outTextureWidth + neighborTx.x;
+		neighborMappedX = (int)(d_map_buffer[neighborIndex].w + 0.5);
+		if (firstMapped < 1 || neighborMappedX<1)
+		{
+			
+			return RAYOUT;
+		}
+		my_printf(":(%d,%d),neighbor:%d,index:%d,neighborIndex:%d\n", mapTx.y, mapTx.x, neighborTx.y, index, neighborIndex);
+
+		my_printf("invalid:(%d,%d)\n", firstMapped, neighborMappedX);
+		my_printf("oc1 tc:(%f,%d)\n", nonNorTc.x, firstMapped);
+		my_printf("oc2 tc:(%f,%d)\n", nonNorTc.x, neighborMappedX);
+
+		oc1 = tex2D(optixColorTex, nonNorTc.x,firstMapped);
+		oc2 = tex2D(optixColorTex, nonNorTc.x,neighborMappedX );
+		
+		centerisAtEdge = false;
+		neighberIsAtEdge = false;
 	}
 	if (centerisAtEdge || neighberIsAtEdge)
 	{
@@ -401,7 +436,10 @@ __device__ int linearNoMappedPosition(float2 tc, int eocWidth, EOCPixel & curren
 	my_printf("oc1:(%f,%f,%f,%f)\n", oc1.x, oc1.y, oc1.z, oc1.w);
 	my_printf("oc2:(%f,%f,%f,%f)\n", oc2.x, oc2.y, oc2.z, oc2.w);
 
-	float ratio = linarRatio(tc.x);
+	if (isRight)
+		ratio = linarRatio(tc.x);
+	else
+		ratio = linarRatio(tc.y);
 	float ratioZ = repo(repo(oc1.w) + ratio*(repo(oc2.w) - repo(oc1.w)));
 	float zRatio = (ratioZ - oc1.w) / (oc2.w - oc1.w);
 	my_printf("ratioZ,zRatio:(%f,%f)\n", ratioZ, zRatio);
@@ -739,6 +777,10 @@ __device__ void FillVolumn(int beginX, int endX, int lineNum, int endUv, int lef
 			int index = i*d_outTopTextureWidth + lineNum;
 			d_cudaTopTexture[index] = make_float4(-dis, realPos.x, realPos.y, realPos.z);
 			int originMappos = (accumIndex - lenght)*d_outTextureWidth + lineNum;
+			if ((accumIndex - lenght) == 786 && lineNum == 338)
+			{
+				my_printf("orginMapppos:%d,i:%d\n", originMappos, i);
+			}
 			//d_map_buffer[originMappos].y = i;
 			d_map_buffer[originMappos].w = i;
 		}
@@ -1133,15 +1175,24 @@ __device__ float3 toFloat3(float4 inValue)
 	return make_float3(inValue.x / inValue.w, inValue.y / inValue.w, inValue.z / inValue.w);
 }
 
-
-__device__ EOCPixel occludedRayLinarState(float tex, int yIndex, float texBegin, float span, float enterZ, float dpdx, float enter_projRatio, float4& color)
+template <bool isRight>
+__device__ EOCPixel occludedRayLinarState(float tex, int lineNum, float texBegin, float span, float enterZ, float dpdx, float enter_projRatio, float4& color)
 {
 	EOCPixel currentPixel;
 	float ratioOneD = (tex - texBegin) / span;
 	float currentZ = repo(repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
-	const int eocWidth = d_imageWidth*ROWLARGER;
+	my_printf("enterZ:%f,ratioOneD:%f,dpdx:%f\n", enterZ, ratioOneD, dpdx);
 
-	int texFetchState = linearNoMappedPosition(make_float2(tex, yIndex + 0.5), eocWidth, currentPixel, color);
+	float2 originTex;
+	if (isRight)
+	{
+		originTex = make_float2(tex, lineNum + 0.5);
+	}
+	else
+	{
+		originTex = make_float2(lineNum + 0.5, tex);
+	}
+	int texFetchState = linearNoMappedPosition<isRight>(originTex, currentPixel, color);
 	if (RAYVALID == texFetchState)
 	{
 		float zOnTex = color.w;
@@ -1236,224 +1287,91 @@ __device__ float mfracf(float x)
 	return x - floorf(x);
 
 }
-__device__ int intersectCameraMidID(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int yIndex, bool isRayUp, int occludedObjId,
-	float* modelView,// ²éÑ¯modelView Ïà»úÏÂµÄÉî¶È
-	bool& returnToMainC, EOCPixel &lastPixel, float4& intersectColor, float2& exitTC, float3& exitWorldPos)
-{
-	int texEnd = currentNote.endIndex;  // Õâ¸öÊÇÓÒ±ß±ß½ç-µÄÖµ
-	int texBegin = currentNote.beginIndex;
-	int span = texEnd + 1 - texBegin;
-	int currentObjectId = nearestInt(tex2D(cudaNormalTex, texEnd - span / 2.0, yIndex + 0.5).w);
-	if (currentObjectId != occludedObjId)
-	{
-		return OHTEROBJECT;
-	}
-	float dpdx;
-	{
-		float exitY, enterY, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
-#define GAP 0.01
-		if (isRayUp)
-		{
-			exitY = yIndex + 1.0 - GAP;
-			enterY = yIndex + GAP;
-		}
-		else
-		{
-			enterY = yIndex + 1.0 - GAP;
-			exitY = yIndex + GAP;
-		}
-#undef GAP
-
-		float2 beforeEnterTc = make_float2(before, enterY);                 //left
-		float2 endEnterTc = make_float2(end, enterY);
-		float2 beforeExitTc = make_float2(before, exitY);                 //left
-		float2 endExitTc = make_float2(end, exitY);
-
-		float3 beforeCenterPos = make_float3(tex2D(cudaPosTex, before, yIndex + 0.5));
-		float3 beforeNormal = normalize(d_cameraPos - beforeCenterPos);
-		float3 endCenterPos = make_float3(tex2D(cudaPosTex, end, yIndex + 0.5));
-		float3 endNormal = normalize(d_cameraPos - endCenterPos);
-
-		float3 beforeEnterPos = plateInterpolation(beforeCenterPos, beforeNormal, beforeEnterTc, d_cameraPos);
-		float3 endEnterPos = plateInterpolation(endCenterPos, endNormal, endEnterTc, d_cameraPos);
-		float3 beforeExitPos = plateInterpolation(beforeCenterPos, beforeNormal, beforeExitTc, d_cameraPos);
-		float3 endExitPos = plateInterpolation(endCenterPos, beforeNormal, endExitTc, d_cameraPos);
-
-
-		float enter_projRatio, exit_projRatiok;
-		float3 enterReservedPos, exitReservedPos, _;
-		bool f_;
-		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeEnterPos, endEnterPos, d_modelViewRight, span, &enterReservedPos, &_, f_, enter_projRatio, _);
-		rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelViewRight, span, &exitReservedPos, &_, f_, exit_projRatiok, _);
-
-		float2 camera1Entertc = getCameraTc(enterReservedPos, d_modelViewRight, d_proj);
-		//printf("camera1 entertc:(%f,%f)\n", 1024 * camera1Entertc.x, 1024 * camera1Entertc.y);
-		float2 camera1EXittc = getCameraTc(exitReservedPos, d_modelViewRight, d_proj);
-		//printf("camera1 exittc:(%f,%f)\n", 1024 * camera1EXittc.x, 1024 * camera1EXittc.y);
-
-		float4 temp = MutiMatrixN(modelView, make_float4(enterReservedPos, 1));
-		float enterZ = -temp.z;
-		temp = MutiMatrixN(modelView, make_float4(exitReservedPos, 1));
-		float exitZ = -temp.z;
-		float step = (enter_projRatio > exit_projRatiok) ? -1.0 : 1.0;
-		float enterP = min(1, max(0, enter_projRatio));
-		float exitP = min(1, max(0, exit_projRatiok));
-		my_printf("enter_projRatio:%f,exit_projRatiok:%f\n", enter_projRatio, exit_projRatiok);
-
-		//printf("enterP,enterP(%f,%f)\n", enterP, exitP);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
-		 dpdx = (repo(exitZ) - repo(enterZ)) / (exit_projRatiok - enter_projRatio);
-	}
-	float middleY = yIndex + 0.5, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
-
-	float3 beforeCenterPos = make_float3(tex2D(cudaPosTex, before, yIndex + 0.5));
-	float3 beforeNormal = normalize(d_cameraPos - beforeCenterPos);
-	float3 endCenterPos = make_float3(tex2D(cudaPosTex, end, yIndex + 0.5));
-	float3 endNormal = normalize(d_cameraPos - endCenterPos);
-
-
-	float  center_projRatiok;
-	float3  centerRevervedPos, _;
-	bool f_;
-	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeCenterPos, endCenterPos, d_modelViewRight, span, &centerRevervedPos, &_, f_, center_projRatiok, _);
-	float4 temp = MutiMatrixN(modelView, make_float4(centerRevervedPos.x, centerRevervedPos.y, centerRevervedPos.z, 1));
-	float rayZ = -temp.z;
-
-	float cneterP = min(1, max(0, center_projRatiok));
-	float texX = texBegin + span*cneterP;
-	int mappedX;
-	float4 outcolor;
-	int texFetchState = noMappedPosition(make_float2(texX, yIndex + 0.5), mappedX, outcolor);
-	if (RAYVALID == texFetchState)
-	{
-		int leftX = mappedX - 1;
-		int rightX = mappedX + 1;
-		const int eocWidth = d_imageWidth* ROWLARGER;
-		if (mfracf(texX)>0.5&&pixelValid(rightX, yIndex))
-		{
-			float dzdx = d_edge_buffer[yIndex*eocWidth + mappedX].dzdx;
-	
-		}
-		else if (mfracf(texX) < 0.5&&pixelValid(leftX, yIndex))
-		{
-
-		}
-
-	}
-
-	return 0;
-}
-
-//Èç¹û²»ÊÇÒ»¸öID,·µ»ØOHTEROBJECT£¬Èç¹ûÓÐ½»µã·µ»ØINTERSECT£¬Ã»ÓÐ½»µã·µ»ØMISSINGNOTE£¬returnToMainC¼ÇÂ¼ÊÇÊÇ·ñÓÐ·ÇÈßÓàÖµ
-__device__ int intersectCameraIDH(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int xIndex, bool isRayRight, int occludedObjId,
-	float* modelView,// ²éÑ¯modelView Ïà»úÏÂµÄÉî¶È
-	bool& returnToMainC, EOCPixel &lastPixel, float4& intersectColor, float2& exitTC, float3& exitWorldPos)
-{
-	int texEnd = currentNote.endIndex;  // Õâ¸öÊÇÓÒ±ß±ß½ç-µÄÖµ
-	int texBegin = currentNote.beginIndex;
-	int span = texEnd + 1 - texBegin;
-	int currentObjectId = nearestInt(tex2D(cudaNormalTex, xIndex + 0.5, texEnd - span / 2.0).w);
-	//printf("current obj fetch (%f,%f)\n", texEnd + span / 2.0, yIndex + 0.5);
-	//printf("note mid obj Id:%d\n", currentObjectId);
-	//printf("texBegin,span(%d,%d)\n", texBegin, span);
-	if (currentObjectId != occludedObjId)
-	{
-		return OHTEROBJECT;
-	}
-
-#define GAP 0.01
-	float exitX, enterX, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
-
-	if (isRayRight)
-	{
-		exitX = xIndex + 1.0 - GAP;
-		enterX = xIndex + GAP;
-	}
-	else
-	{
-		exitX = xIndex + 1.0 - GAP;
-		enterX = xIndex + GAP;
-	}
-
-#undef GAP
-	float2 beforeEnterTc = make_float2(enterX,before);                 //left
-	float2 endEnterTc = make_float2(enterX,end);
-	float2 beforeExitTc = make_float2(exitX,before);                 //left
-	float2 endExitTc = make_float2(exitX,end);
-
-	float3 beforeCenterPos = make_float3(tex2D(cudaPosTex,xIndex+0.5, before));
-	float3 beforeNormal = normalize(d_cameraPos - beforeCenterPos);
-	float3 endCenterPos = make_float3(tex2D(cudaPosTex, xIndex + 0.5, end));
-	float3 endNormal = normalize(d_cameraPos - endCenterPos);
-
-	float3 beforeEnterPos = plateInterpolation(beforeCenterPos, beforeNormal, beforeEnterTc, d_cameraPos);
-	float3 endEnterPos = plateInterpolation(endCenterPos, endNormal, endEnterTc, d_cameraPos);
-	float3 beforeExitPos = plateInterpolation(beforeCenterPos, beforeNormal, beforeExitTc, d_cameraPos);
-	float3 endExitPos = plateInterpolation(endCenterPos, beforeNormal, endExitTc, d_cameraPos);
-
-
-
-
-}
 
 //Èç¹û²»ÊÇÒ»¸öID,·µ»ØOHTEROBJECT£¬Èç¹ûÓÐ½»µã·µ»ØINTERSECT£¬Ã»ÓÐ½»µã·µ»ØMISSINGNOTE£¬returnToMainC¼ÇÂ¼ÊÇÊÇ·ñÓÐ·ÇÈßÓàÖµ
 template <bool isRight>
-__device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int yIndex, bool isRayUp, int occludedObjId, 
+__device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int lineNum, bool isRayUp, int occludedObjId, 
 	float* modelView,// ²éÑ¯modelView Ïà»úÏÂµÄÉî¶È
 	bool& returnToMainC, EOCPixel &lastPixel, float4& intersectColor, float2& exitTC, float3& exitWorldPos)
 {
 	int texEnd = currentNote.endIndex;  // Õâ¸öÊÇÓÒ±ß±ß½ç-µÄÖµ
 	int texBegin = currentNote.beginIndex;
 	int span = texEnd + 1 - texBegin;
-	int currentObjectId = nearestInt(tex2D(cudaNormalTex, texEnd - span / 2.0, yIndex + 0.5).w);
+	int currentObjectId;
+	if(isRight)
+		currentObjectId = nearestInt(tex2D(cudaNormalTex, texEnd - span / 2.0, lineNum + 0.5).w);
+	else
+		currentObjectId = nearestInt(tex2D(cudaNormalTex, lineNum + 0.5,texEnd - span / 2.0 ).w);
 	//printf("current obj fetch (%f,%f)\n", texEnd + span / 2.0, yIndex + 0.5);
 	//printf("note mid obj Id:%d\n", currentObjectId);
 	//printf("texBegin,span(%d,%d)\n", texBegin, span);
+	my_printf("currentObjectId,%d,occludedObjId:%d\n", currentObjectId, occludedObjId);
 	if (currentObjectId != occludedObjId)
 	{
 		return OHTEROBJECT;
 	}
 	
 #define GAP 0.01
-	float exitY, enterY, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
+	float exitLineNum, enterLineNum, before = texEnd + 0.5, end = texEnd + 1 + 0.5;
 	
 	if (isRayUp)
 	{
-		exitY = yIndex + 1.0 - GAP;
-		enterY = yIndex + GAP;
+		exitLineNum = lineNum + 1.0 - GAP;
+		enterLineNum = lineNum + GAP;
 	}
 	else
 	{
-		enterY = yIndex + 1.0 - GAP;
-		exitY = yIndex + GAP;
+		enterLineNum = lineNum + 1.0 - GAP;
+		exitLineNum = lineNum + GAP;
 	}
 	
 #undef GAP
-	float2 beforeEnterTc = make_float2(before, enterY);                 //left
-	float2 endEnterTc = make_float2(end, enterY);
-	float2 beforeExitTc = make_float2(before, exitY);                 //left
-	float2 endExitTc = make_float2(end, exitY);
+	float2 beforeEnterTc, endEnterTc, beforeExitTc, endExitTc;
+	float3 beforeCenterPos, endCenterPos;
+	float* d_modelView;
+	if (isRight)
+	{
+		beforeEnterTc = make_float2(before, enterLineNum);                 //left
+		endEnterTc = make_float2(end, enterLineNum);
+		beforeExitTc = make_float2(before, exitLineNum);                 //left
+		endExitTc = make_float2(end, exitLineNum);
 
-	float3 beforeCenterPos = make_float3(tex2D(cudaPosTex, before, yIndex + 0.5));
-	float3 beforeNormal = normalize(d_cameraPos-beforeCenterPos);
-	float3 endCenterPos = make_float3(tex2D(cudaPosTex, end, yIndex + 0.5));
+		beforeCenterPos  = make_float3(tex2D(cudaPosTex, before, lineNum + 0.5));
+		endCenterPos = make_float3(tex2D(cudaPosTex, end, lineNum + 0.5));
+		d_modelView = d_modelViewRight;
+	}
+	else
+	{
+		beforeEnterTc = make_float2(enterLineNum, before);                 //left
+		endEnterTc = make_float2(enterLineNum, end);
+		beforeExitTc = make_float2(exitLineNum, before);                 //left
+		endExitTc = make_float2(exitLineNum, end);
+
+		beforeCenterPos  = make_float3(tex2D(cudaPosTex, lineNum + 0.5, before));
+		//my_printf("edge before tc:(%f,%f)\n", lineNum + 0.5, before);
+		endCenterPos = make_float3(tex2D(cudaPosTex, lineNum + 0.5, end));
+		//my_printf("edge end tc:(%f,%f)\n", lineNum + 0.5, end);
+		d_modelView = d_modelViewTop;
+	}
+	float3 beforeNormal = normalize(d_cameraPos - beforeCenterPos);
 	float3 endNormal = normalize(d_cameraPos - endCenterPos);
 
 	float3 beforeEnterPos = plateInterpolation(beforeCenterPos, beforeNormal, beforeEnterTc, d_cameraPos);
 	float3 endEnterPos = plateInterpolation(endCenterPos, endNormal, endEnterTc, d_cameraPos);
 	float3 beforeExitPos = plateInterpolation(beforeCenterPos, beforeNormal, beforeExitTc, d_cameraPos);
 	float3 endExitPos = plateInterpolation(endCenterPos, beforeNormal, endExitTc, d_cameraPos);
-	
+
 
 	float enter_projRatio, exit_projRatiok;
 	float3 enterReservedPos, exitReservedPos, _;
 	bool f_;
-	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeEnterPos, endEnterPos, d_modelViewRight, span, &enterReservedPos, &_, f_, enter_projRatio, _);
-	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelViewRight, span, &exitReservedPos, &_, f_, exit_projRatiok, _);
+	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeEnterPos, endEnterPos, d_modelView, span, &enterReservedPos, &_, f_, enter_projRatio, _);
+	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelView, span, &exitReservedPos, &_, f_, exit_projRatiok, _);
 	
-	float2 camera1Entertc = getCameraTc(enterReservedPos, d_modelViewRight, d_proj);
-	//printf("camera1 entertc:(%f,%f)\n", 1024 * camera1Entertc.x, 1024 * camera1Entertc.y);
-	float2 camera1EXittc = getCameraTc(exitReservedPos, d_modelViewRight, d_proj);
-	//printf("camera1 exittc:(%f,%f)\n", 1024 * camera1EXittc.x, 1024 * camera1EXittc.y);
+	float2 camera1Entertc = getCameraTc(enterReservedPos, d_modelView, d_proj);
+	my_printf("camera1 entertc:(%f,%f)\n", 1024 * camera1Entertc.x, 1024 * camera1Entertc.y);
+	float2 camera1EXittc = getCameraTc(exitReservedPos, d_modelView, d_proj);
+	my_printf("camera1 exittc:(%f,%f)\n", 1024 * camera1EXittc.x, 1024 * camera1EXittc.y);
 
 	float4 temp = MutiMatrixN(modelView, make_float4(enterReservedPos, 1));
 	float enterZ = -temp.z;
@@ -1469,15 +1387,16 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 	float4 color;
 	
 	bool isInloop =false;
-	my_printf("enterP:%f,exitP:%f\n", enterP, exitP);
+	my_printf("enterP:%f,exitP:%f,span:%d\n", enterP, exitP,span);
 	EOCPixel currentPixel;
+	my_printf("beginTex:%f,endTex:%f\n", texBegin + span* enterP, texBegin + span* exitP);
 	for (float tex = (texBegin + span* enterP); tex <(texBegin + span* exitP); tex += step)
 	{
 		//printf("ratioOneD:%f,test tx:%f,currentZ:%f\n", ratioOneD, tex, currentZ);
 		isInloop = true;
 		//currentPixel = occludedRayState(tex, yIndex, texBegin, span, enterZ, dpdx, enter_projRatio,  color);
-		currentPixel = occludedRayLinarState(tex, yIndex, texBegin, span, enterZ, dpdx, enter_projRatio, color);
-		my_printf("current state:%d\n", currentPixel.m_state);
+		currentPixel = occludedRayLinarState<isRight>(tex, lineNum, texBegin, span, enterZ, dpdx, enter_projRatio, color);
+		my_printf("current State: isvalid:%d, current state:%d\n",currentPixel.m_isValid, currentPixel.m_state);
 		my_printf("lastDepth,currentDepth:%f,%f\n", lastPixel.m_detpth, currentPixel.m_detpth);
 		bool isIntersect = (RAYISUNDER == currentPixel.m_state &&lastPixel.m_state == RAYISUP) || (RAYISUP == currentPixel.m_state &&lastPixel.m_state == RAYISUNDER);
 		my_printf("valid current(%d,last:%d,intersect:%d)\n", currentPixel.m_isValid, lastPixel.m_isValid, isIntersect);
@@ -1521,12 +1440,26 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 #undef GAP
 
 }
-// ¼ì²éÔÚobjectIdËù´ú±íµÄÕÚµ²ÎïÏÂÃæµÄÇó½»½á¹ûÒªÃ´·µ»ØNOOBJECTNOTE£¬Ã»ÓÐÕÒµ½IDÒ»ÑùµÄÒªÃ´·µ»Ømisiing Ã»½¹µã
+// ¼ì²éÔÚobjectIdËù´ú±íµÄÕÚµ²ÎïÏÂÃæµÄÇó½»½á¹ûÒªÃ´·µ»ØNOOBJECTNOTE£¬Ã»ÓÐÕÒµ½IDÒ»ÑùµÄÒªÃ´·µ»Ømisiing Ã»½¹µã,Ñ°ÕÒÔÚlineNum¶ÔÓ¦µÄÇøÓò ÓÐÃ»ÓÐ½»µã
 template <bool isRight>
 __device__ int isIntersectLineWithObjectIdW(float3 posW, float3 directionW, float3 cameraPos, int lineNum, bool isRayUp, int occudedObjId,
 	float* modelView, bool& returnTomain, EOCPixel &previousPixel, float3& outPos, float4& resultColor)
 {
-	ListNote currentNote = *((ListNote*)&d_cudaPboBuffer[lineNum]);
+	uint3* headBuffer;
+	ListNote* listBuffer;
+	if (isRight)
+	{
+
+		headBuffer = d_cudaPboBuffer;
+		listBuffer = d_listBuffer;
+	}
+	else
+	{
+		headBuffer = d_cudaPboTopBuffer;
+		listBuffer = d_listBuffer_top;
+	}
+
+	ListNote currentNote = *((ListNote*)&headBuffer[lineNum]);
 
 	//printf("Render:next %d end:%d begin:%d,\n", currentNote.nextPt, currentNote.endIndex, currentNote.beginIndex);
 	my_printf("testLine num:%d\n", lineNum);
@@ -1539,7 +1472,8 @@ __device__ int isIntersectLineWithObjectIdW(float3 posW, float3 directionW, floa
 	while (currentNote.nextPt != 0)
 	{
 		int noteIndex = currentNote.nextPt;
-		currentNote = d_listBuffer[currentNote.nextPt];
+		currentNote = listBuffer[currentNote.nextPt];
+		my_printf("currentNote.endIndex:%d\n", currentNote.endIndex);
 
 
 		//printf("intersect with a line\n");
@@ -1565,7 +1499,7 @@ __device__ int isIntersectLineWithObjectIdW(float3 posW, float3 directionW, floa
 		else if (OHTEROBJECT == result || MISSINGNOTE == result)
 		{
 			//test other note in the same line
-			currentNote = *((ListNote*)&d_cudaPboBuffer[currentNote.nextPt]);
+			currentNote = *((ListNote*)&headBuffer[currentNote.nextPt]);
 		}
 		else if (OUTOCCLUDED == result)
 		{
@@ -1677,41 +1611,62 @@ __device__ float3 startPointOfTex(float2 projStart, float2 projEnd, float raySta
 
 }
 template <bool isRight>
-__device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, float2 tc, float2 lastTc, float3 eocPos, float &n, int stepN, float4& oc, int& outLineId)
+__device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, float2 tc, float2 lastTc, float &n, int stepN, float4& oc, int& outLineId)
 {
 	//
 	//Êä³öÐÐÊýÎªÈç¹ûµÚÒ»¸öÐÐÓÐ½»µãÔòÎª¿ªÊ¼ÐÐÊý£¬·ñÔòÎª¿ªÊ¼ÐÐÊý+1¸öÆ«ÒÆ
 	float2 d_mapScale = 1.0 / make_float2(d_construct_width, d_construct_height);
-	int stepY = abs(interval.y) / d_mapScale.y + 1;
 	float3 exitPos;
 	bool rayAdvanced = false;
-
+	
+	my_printf("interval:%f,%f\n", interval.x, interval.y);
 	//ÕÒµ½ÕÚµ²ÌåµÄbojectId
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
+	my_printf("nonNorTc:%f,%f\n", nonNorTc.x, nonNorTc.y);
 	int objectId = nearestInt(tex2D(cudaNormalTex, nonNorTc.x, nonNorTc.y).w);
-	bool isUp = interval.y > 0;
-	int startLineNum = floor(lastTc.y*d_imageHeight);  // Èç¹ûÊÇ6.6 ÐÐ£¬°´µÚ6ÐÐËÑË÷ µ¥´¿È¡Õû
+	int stepLine, startLineNum;
+	bool isUp;
+	float* modelView;
+	float3 eocPos;
+	if (isRight)
+	{
+		isUp = interval.y > 0;
+		stepLine = abs(interval.y) / d_mapScale.y + 1;
+		modelView = d_modelViewRight;
+		startLineNum = floor(lastTc.y*d_imageHeight);	// Èç¹ûÊÇ6.6 ÐÐ£¬°´µÚ6ÐÐËÑË÷ µ¥´¿È¡Õû
+		 eocPos = d_eocPos;
+
+	}
+	else
+	{
+		isUp = interval.x > 0;
+		stepLine = abs(interval.x) / d_mapScale.x + 1;
+		modelView = d_modelViewTop;
+		startLineNum = floor(lastTc.x*d_imageWidth);
+		 eocPos = d_eocTopPos;
+	}
+	my_printf("startLineNum:%d,isUp:%d", startLineNum, isUp);
 	float3 outPos;
 	bool returntoMain = false;
 	// ¼ì²éÔÚobjectIdËù´ú±íµÄÕÚµ²ÎïÏÂÃæµÄÇó½»½á¹ûÒªÃ´·µ»ØNOOBJECTNOTE£¬Ã»ÓÐÕÒµ½IDÒ»ÑùµÄÒªÃ´·µ»Ømisiing Ã»½¹µã
 	EOCPixel lastPicel(RAYISUP, 0.0f);
 	lastPicel.m_isValid = true;
 	//EOCPixel lastPicel(RAYBEGIN, 0.0f);
-	int result = isIntersectLineWithObjectIdW<isRight>(posW, directionW, eocPos, startLineNum, isUp, objectId, d_modelViewRight, returntoMain, lastPicel, outPos, oc);
+	int result = isIntersectLineWithObjectIdW<isRight>(posW, directionW, eocPos, startLineNum, isUp, objectId, modelView, returntoMain, lastPicel, outPos, oc);
 	int lineId = startLineNum + (isUp ? 1 : -1);// lineId ´æ´¢µÄÊÇÒªËÑË÷µÄÏÂÒ»ÐÐ
 	outLineId = startLineNum;
 	if (false == returntoMain)
 	{
 		outLineId = startLineNum + (isUp ? 1 : -1);
-		n += (float)stepN / stepY;
+		n += (float)stepN / stepLine;
 	}
 	my_printf("out line id increase: %d\n", outLineId);
 	while (result == MISSINGNOTE)// Èç¹ûÕâÒ»ÁÐÖÐÃ»ÓÐÇó½»µ½MISS,²¢ÇÒÃ»ÓÐ·¢Éú
 	{
 
-		result = isIntersectLineWithObjectIdW<isRight>(posW, directionW, d_eocPos, lineId, isUp, objectId, d_modelViewRight, returntoMain, lastPicel, outPos, oc);
+		result = isIntersectLineWithObjectIdW<isRight>(posW, directionW, eocPos, lineId, isUp, objectId, modelView, returntoMain, lastPicel, outPos, oc);
 		lineId = lineId + (isUp ? 1 : -1);
-		n += (float)stepN / stepY;
+		n += (float)stepN / stepLine;
 
 		my_printf("out line id increase: %d\n", outLineId);
 		my_printf("result: %d\n", result);
@@ -1832,10 +1787,10 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 			//previewsN ¼ÇÂ¼µÄÊÇÖ´ÐÐeocËÑË÷Ö®Ç°µÄn
 			int previewsN = n;
 			my_printf("here\n");
-			if (isRightEdge(lastTc) && isOccluedeArea(tc))// Èç¹ûµ¹ÊýµÚ¶þ¸öÊÇÔÚ±ßºáÑØÉÏ£¬Ò²¾ÍÊÇ½øÈëÕÚµ²Ìå
+			if (isRightEdge(lastTc) && isOccluedeArea<true>(tc))// Èç¹ûµ¹ÊýµÚ¶þ¸öÊÇÔÚ±ßºáÑØÉÏ£¬Ò²¾ÍÊÇ½øÈëÕÚµ²Ìå
 			{
 				int outLineId;
-				int result = intersetctWithW<true>(posW, directionW, interval, tc, lastTc, d_eocPos, n, stepN, oc, outLineId);
+				int result = intersetctWithW<true>(posW, directionW, interval, tc, lastTc, n, stepN, oc, outLineId);
 				if (result == INTERSECT)
 				{
 					my_printf("addition note intersect\n");
@@ -1857,8 +1812,30 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 				}
 				
 			}
-			else if (isTopEdge(lastTc) && isOccluedeArea(tc))
+			else if (isTopEdge(lastTc) && isOccluedeArea<false>(tc))
 			{
+				
+				int outLineId;
+				int result = intersetctWithW<false>(posW, directionW, interval, tc, lastTc, n, stepN, oc, outLineId);
+				if (result == INTERSECT)
+				{
+					my_printf("addition note intersect\n");
+					my_printf("oc:(%f,%f,%f)\n", oc.x, oc.y, oc.z);
+					return 1;
+				}
+				else //Èç¹ûµ½ÁËÒ»ÖØÐÂ»Øµ½Ö÷Ïà»ú
+				{
+					//Í¨¹ýlineId µÄºÅÂëÀ´ÅÐ¶Ïn¸üÐÂnµÄµØ·½£¬Îª¸ÃÐÐµÄÒ»¸öÆ«ÒÆ´¦£¬
+					float newN;
+#define GAP 0.01
+					newN = stepN * abs(outLineId + GAP - projStart.x / d_mapScale.x) / (abs(interval.x) / d_mapScale.x);
+					my_printf("new outlineId:%d\n", outLineId);
+					// ÐÂµÄ²½ÊýÎªËÑË÷ÖÕµã
+					n = max(newN, previewsN);
+					currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
+#undef GAP
+					continue;// ÏÂÒ»²½Ñ°ÕÒ
+				}
 
 			}
 			else if (isTopEdge(lastTc) )
@@ -1887,7 +1864,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 667 || y != 483	)
+	if (x != 413 || y !=775)
 	   return;
 #endif
 	//if ( y <100)
@@ -1936,7 +1913,7 @@ __device__ edgeInfo isEocRightEdge(int left, int ceter, int right, int y, int ty
 	float leftRe = 1.0 / tex2D(optixColorTex, left, y).w;
 	float centerRe = 1.0 / tex2D(optixColorTex, ceter, y).w;
 	float rightRe = 1.0 / tex2D(optixColorTex, right, y).w;
-	my_printf("left:%f,center:%f,right:%f,value:%f\n", leftRe, centerRe, rightRe, abs(2 * centerRe - leftRe - rightRe));
+	//my_printf("left:%f,center:%f,right:%f,value:%f\n", leftRe, centerRe, rightRe, abs(2 * centerRe - leftRe - rightRe));
 
 	if (ISMIDDLE == type)
 	{
