@@ -127,7 +127,8 @@ float4* cuda_map_buffer;
 struct edgeInfo //记录扩展区域的地方是否是edge，从而判断插值有效性
 {
 	bool isRightEdge;
-	float dzdx;
+	bool isTopEdge;
+	float dzdx;//zh
 	__device__ __host__ edgeInfo():	isRightEdge (false),dzdx(0)
 	{
 	
@@ -395,7 +396,7 @@ __device__ int linearNoMappedPosition(float2 tc, EOCPixel & currentPixel, float4
 		}
 		oc1 = tex2D(optixColorTex, firstMapped, nonNorTc.y);
 		oc2 = tex2D(optixColorTex, neighborMappedX, nonNorTc.y);
-		const int eocWidth = d_imageWidth*ROWLARGER;
+		const int eocWidth = d_outTopTextureWidth;
 		centerisAtEdge = d_edge_buffer[mapTx.y*eocWidth + firstMapped].isRightEdge;
 		neighberIsAtEdge = d_edge_buffer[neighborTx.y*eocWidth + neighborMappedX].isRightEdge;
 	}
@@ -418,9 +419,12 @@ __device__ int linearNoMappedPosition(float2 tc, EOCPixel & currentPixel, float4
 
 		oc1 = tex2D(optixColorTex, nonNorTc.x,firstMapped);
 		oc2 = tex2D(optixColorTex, nonNorTc.x,neighborMappedX );
-		
-		centerisAtEdge = false;
-		neighberIsAtEdge = false;
+		const int eocWidth = d_outTopTextureWidth;
+
+		my_printf("mapTx.y firstMapped:(%d,%d)\n", mapTx.y, firstMapped);
+
+		centerisAtEdge = d_edge_buffer[firstMapped*eocWidth + mapTx.x].isTopEdge;
+		neighberIsAtEdge = d_edge_buffer[neighborMappedX*eocWidth + mapTx.y].isTopEdge;
 	}
 	if (centerisAtEdge || neighberIsAtEdge)
 	{
@@ -1390,7 +1394,7 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 	my_printf("enterP:%f,exitP:%f,span:%d\n", enterP, exitP,span);
 	EOCPixel currentPixel;
 	my_printf("beginTex:%f,endTex:%f\n", texBegin + span* enterP, texBegin + span* exitP);
-	for (float tex = (texBegin + span* enterP); tex <(texBegin + span* exitP); tex += step)
+	for (float tex = (texBegin + span* enterP); 0 <step*(texBegin + span* exitP-tex); tex += step)
 	{
 		//printf("ratioOneD:%f,test tx:%f,currentZ:%f\n", ratioOneD, tex, currentZ);
 		isInloop = true;
@@ -1864,7 +1868,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 413 || y !=775)
+	if (x != 335 || y !=645)
 	   return;
 #endif
 	//if ( y <100)
@@ -1898,7 +1902,7 @@ void construct_cudaInit()
 
 
 }
-__device__ bool eocIsRight(int x,int y)
+__device__ bool isEocArea(int x,int y)
 {
 	float4 value = tex2D(optixColorTex, x, y);
 	return value.w > 0;
@@ -1907,14 +1911,25 @@ __device__ bool eocIsRight(int x,int y)
 #define ISMIDDLE 3
 #define ISRIGHT 4
 #define ISLEFT 5
-__device__ edgeInfo isEocRightEdge(int left, int ceter, int right, int y, int type)
+template <bool isRight>
+__device__ bool isEocRightEdge(int left, int ceter, int right, int lineNum, int type)
 {
-	edgeInfo value;
-	float leftRe = 1.0 / tex2D(optixColorTex, left, y).w;
-	float centerRe = 1.0 / tex2D(optixColorTex, ceter, y).w;
-	float rightRe = 1.0 / tex2D(optixColorTex, right, y).w;
+	//edgeInfo value;
+	float leftRe, centerRe, rightRe;
+	if (isRight)
+	{
+		leftRe = 1.0 / tex2D(optixColorTex, left, lineNum).w;
+		centerRe = 1.0 / tex2D(optixColorTex, ceter, lineNum).w;
+		rightRe = 1.0 / tex2D(optixColorTex, right, lineNum).w;
+	}
+	else
+	{
+		leftRe = 1.0 / tex2D(optixColorTex, lineNum, left).w;
+		centerRe = 1.0 / tex2D(optixColorTex, lineNum,ceter).w;
+		rightRe = 1.0 / tex2D(optixColorTex, lineNum,right).w;
+	}
 	//my_printf("left:%f,center:%f,right:%f,value:%f\n", leftRe, centerRe, rightRe, abs(2 * centerRe - leftRe - rightRe));
-
+	/*
 	if (ISMIDDLE == type)
 	{
 		value.dzdx = (rightRe - leftRe) / 2;
@@ -1926,9 +1941,9 @@ __device__ edgeInfo isEocRightEdge(int left, int ceter, int right, int y, int ty
 	else if (ISRIGHT == type)
 	{
 		value.dzdx = rightRe-centerRe;
-	}
-	value.isRightEdge = abs(2 * centerRe - leftRe - rightRe) > EDGETHRES;
-	return value;
+	}*/
+	bool result = abs(2 * centerRe - leftRe - rightRe) > EDGETHRES;
+	return result;
 }
 __global__ void EocEdgeKernel(int kernelWidth, int kernelHeight)
 {
@@ -1941,22 +1956,40 @@ __global__ void EocEdgeKernel(int kernelWidth, int kernelHeight)
 	//if (x != 649 || y != 774)
 	//	return;
 #endif
-	if (eocIsRight(x, y) && eocIsRight(x - 1, y) && eocIsRight(x + 1, y))
+	if (isEocArea(x, y) && isEocArea(x - 1, y) && isEocArea(x + 1, y))
 	{
 		//my_printf("center edge\n");
-		d_edge_buffer[y*kernelWidth + x] = isEocRightEdge(x - 1, x, x + 1, y,ISMIDDLE);
+		d_edge_buffer[y*kernelWidth + x].isRightEdge = isEocRightEdge<true>(x - 1, x, x + 1, y,ISMIDDLE);
 	}
-	else if  (eocIsRight(x, y) && eocIsRight(x +1 , y) && eocIsRight(x + 2, y))
+	else if  (isEocArea(x, y) && isEocArea(x +1 , y) && isEocArea(x + 2, y))
 	{
-		d_edge_buffer[y*kernelWidth + x] = isEocRightEdge(x, x + 1, x + 2, y,ISLEFT);
+		d_edge_buffer[y*kernelWidth + x].isRightEdge = isEocRightEdge<true>(x, x + 1, x + 2, y, ISLEFT);
 	}
-	else if (eocIsRight(x, y) && eocIsRight(x - 1, y) && eocIsRight(x -2, y))
+	else if (isEocArea(x, y) && isEocArea(x - 1, y) && isEocArea(x -2, y))
 	{
-		d_edge_buffer[y*kernelWidth + x] = isEocRightEdge(x - 2, x - 1, x, y,ISRIGHT);
+		d_edge_buffer[y*kernelWidth + x].isRightEdge = isEocRightEdge<true>(x - 2, x - 1, x, y, ISRIGHT);
 	}
 	else
 	{
 		d_edge_buffer[y*kernelWidth + x].isRightEdge = false;
+	}
+
+	if (isEocArea(x, y) && isEocArea(x, y - 1) && isEocArea(x, y + 1))
+	{
+		//my_printf("center edge\n");
+		d_edge_buffer[y*kernelWidth + x].isTopEdge = isEocRightEdge<false>(y - 1, y, y + 1, x, ISMIDDLE);
+	}
+	else if (isEocArea(x, y) && isEocArea(x, y + 1) && isEocArea(x, y + 2))
+	{
+		d_edge_buffer[y*kernelWidth + x].isTopEdge = isEocRightEdge<false>(y, y + 1, y + 2, x, ISLEFT);
+	}
+	else if (isEocArea(x, y) && isEocArea(x, y - 1) && isEocArea(x, y - 2))
+	{
+		d_edge_buffer[y*kernelWidth + x].isTopEdge = isEocRightEdge<false>(y - 2, y - 1, y, x, ISRIGHT);
+	}
+	else
+	{
+		d_edge_buffer[y*kernelWidth + x].isTopEdge = false;
 	}
 	
 }
