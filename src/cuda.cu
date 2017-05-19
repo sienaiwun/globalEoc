@@ -4,7 +4,7 @@
 #include "Camera.h"
 #define BEGINOFFSET (1.4f)
 #define ENDOFFSET (370)
-//#define PRINTDEBUG
+#define PRINTDEBUG
 #ifdef PRINTDEBUG
 #define my_printf(...) \
 	printf(__VA_ARGS__)
@@ -394,6 +394,9 @@ __device__ int linearNoMappedPosition(float2 tc, EOCPixel & currentPixel, float4
 		{
 			return RAYOUT;
 		}
+		my_printf("oc1 tc:(%d,%f)\n", firstMapped, nonNorTc.y);
+		my_printf("oc2 tc:(%d,%f)\n", neighborMappedX, nonNorTc.y);
+
 		oc1 = tex2D(optixColorTex, firstMapped, nonNorTc.y);
 		oc2 = tex2D(optixColorTex, neighborMappedX, nonNorTc.y);
 		const int eocWidth = d_outTopTextureWidth;
@@ -537,36 +540,36 @@ __device__ bool isVolumeTop(float2 uv)
 	return value.x > 0.5;
 
 }
+template <bool isRight>
 __device__ bool isEdge(float2 uv)
 {
-	return tex2D(cudaEdgeTex, uv.x, uv.y).x > 0.05;
+	if (isRight)
+		return tex2D(cudaEdgeTex, uv.x, uv.y).x > 0.05;
+	else
+		return tex2D(cudaEdgeTex, uv.x, uv.y).y > 0.05;
 }
-__device__ bool isEdgeTop(float2 uv)
-{
-	return tex2D(cudaEdgeTex, uv.x, uv.y).y > 0.05;
-}
+template <bool isRight>
 __device__ bool isMinusEdge(float2 uv)
 {
-	return tex2D(cudaEdgeTex, uv.x, uv.y).x < -0.05;
-}
-__device__ bool isMinusEdgeTop(float2 uv)
-{
-	return tex2D(cudaEdgeTex, uv.x, uv.y).y < -0.05;
+	if (isRight)
+		return tex2D(cudaEdgeTex, uv.x, uv.y).x < -0.05;
+	else
+		return tex2D(cudaEdgeTex, uv.x, uv.y).y < -0.05;
 }
 __device__ bool isTracingEdge(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
-	return isEdge(nonNorTc) || isEdgeTop(nonNorTc) || isMinusEdge(nonNorTc) || isMinusEdgeTop(nonNorTc);
+	return isEdge<true>(nonNorTc) || isEdge<false>(nonNorTc) || isMinusEdge<true>(nonNorTc) || isMinusEdge<false>(nonNorTc);
 }
 __device__ bool isTopEdge(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
-	return  isEdgeTop(nonNorTc);
+	return  isEdge<false>(nonNorTc);
 }
 __device__ bool isRightEdge(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
-	return  isEdge(nonNorTc);
+	return  isEdge<true>(nonNorTc);
 }
 
 
@@ -591,7 +594,7 @@ __global__ void countRowKernelTop(int kernelWidth, int kernelHeight)
 	for (int y = 0; y< d_imageHeight; y++)
 	{
 		float2 currentUv = toUv(index, y);
-		if (isMinusEdgeTop(currentUv))
+		if (isMinusEdge<false>(currentUv))
 		{
 			lastMinusIndey = y;
 		}
@@ -613,7 +616,7 @@ __global__ void countRowKernelTop(int kernelWidth, int kernelHeight)
 
 
 		}
-		else if (etype == isVolumn && isEdgeTop(currentUv))
+		else if (etype == isVolumn && isEdge<false>(currentUv))
 		{
 			//printf("end :%d\n",y);
 
@@ -645,7 +648,7 @@ __global__ void countRowKernel(int kernelWidth, int kernelHeight)
 		float2 currentUv = toUv(x, y);
 		//if (x == 340)
 
-		if (isMinusEdge(currentUv))
+		if (isMinusEdge<true>(currentUv))
 		{
 			lastMinusIndex = x;
 		}
@@ -667,7 +670,7 @@ __global__ void countRowKernel(int kernelWidth, int kernelHeight)
 
 
 		}
-		else if (etype == isVolumn && isEdge(currentUv))
+		else if (etype == isVolumn && isEdge<true>(currentUv))
 		{
 			//printf("end :%d\n", x);
 
@@ -796,12 +799,16 @@ __device__ void FillVolumn(int beginX, int endX, int lineNum, int endUv, int lef
 template <bool isRight>
 __device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int endUvI, int& accumIndexX) //beginUv 用了toUv函数
 {
-		float beginUv = beginUvI + 0.5;
+	float beginUv = beginUvI + 0.5;
 	float endUv = endUvI + 0.5;
 
 	int top, index, originMappos;
 	if (isRight)
+	{ 
 		top = min(endX, d_outTextureWidth - 1);
+		//printf("top:%d,beginUv,endUv:(%f,%f),endX:%d\n",top,beginUv,endUv);
+
+	}
 	else
 		top = min(endX, d_outTopTextureHeight - 1);
 	for (int i = beginX; i <= top; i++)
@@ -810,10 +817,13 @@ __device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int en
 		if (isRight)
 		{
 			index = lineNum*d_outTextureWidth + i;
-			d_cudaTexture[index] = tex2D(cudaColorTex, uvx, lineNum);
+			d_cudaTexture[index] = tex2D(cudaColorTex, uvx, lineNum +0.5);
 			originMappos = lineNum*d_outTextureWidth + accumIndexX;
 			d_map_buffer[originMappos].x = i;
-
+			if (lineNum == 512)
+			{
+				//printf("render(y,x):%d,%d:(%f,%f)\n", lineNum, i,	 + 0.5, uvx);
+			}
 		}
 		else
 		{
@@ -836,7 +846,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 // 竖需要改动
 {
 	int index = __umul24(blockIdx.y, blockDim.y) + threadIdx.y;
-	if (index > kernelHeight)
+	if (index >= kernelHeight)
 		return;
 	//if (y != 813)
 	//	return;
@@ -853,7 +863,7 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 		headBuffer = d_cudaPboTopBuffer;
 		listBuffer = d_listBuffer_top;
 	}
-	if (!isRight&&index>d_imageWidth)
+	if (!isRight&&index>=d_imageWidth)
 	{
 		FillLine(index);
 		return;
@@ -900,7 +910,17 @@ __global__ void renderToTexutre(int kernelWidth, int kernelHeight)
 	}
 	fillBegin = texBegin + acuumPixel;
 	//printf("final:(%d,%d) u(%f,%f)\n", fillBegin, d_imageWidth + span, toUv(texBegin, y).x, toUv(d_imageWidth - 1, y).x);
-	FillSpan<isRight>(fillBegin*factor, (d_imageWidth + acuumPixel)*factor, index, texBegin, d_imageWidth - 1, accum_index);
+	int endLength;
+	if (isRight)
+	{
+		endLength = d_imageWidth - 1;
+	}
+	else
+	{
+		endLength = d_imageHeight - 1;
+	}
+	//printf("final:(%d,%d) u(%f,%f)\n", fillBegin, d_imageWidth + span, toUv(texBegin, y).x, toUv(d_imageWidth - 1, y).x);
+	FillSpan<isRight>(fillBegin*factor, (endLength + acuumPixel)*factor, index, texBegin, endLength, accum_index);
 
 
 }
@@ -1185,6 +1205,11 @@ __device__ EOCPixel occludedRayLinarState(float tex, int lineNum, float texBegin
 	EOCPixel currentPixel;
 	float ratioOneD = (tex - texBegin) / span;
 	float currentZ = repo(repo(enterZ) + (ratioOneD - enter_projRatio)*dpdx);
+	if (abs(currentZ) > 1000)  // 因为轮询的缘故，可能光线已经很远了
+	{
+		currentPixel.m_isValid = false;
+		return currentPixel;
+	}
 	my_printf("enterZ:%f,ratioOneD:%f,dpdx:%f\n", enterZ, ratioOneD, dpdx);
 
 	float2 originTex;
@@ -1303,10 +1328,15 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 	int span = texEnd + 1 - texBegin;
 	int currentObjectId;
 	if(isRight)
-		currentObjectId = nearestInt(tex2D(cudaNormalTex, texEnd - span / 2.0, lineNum + 0.5).w);
+	{
+		currentObjectId = nearestInt(tex2D(cudaNormalTex, texEnd + 1 - span / 2.0, lineNum + 0.5).w);
+		my_printf("objectId texEnd(%d,span:%d),tc:(%f,%f)\n",texEnd,span, texEnd - span / 2.0, lineNum + 0.5);
+
+	}
 	else
-		currentObjectId = nearestInt(tex2D(cudaNormalTex, lineNum + 0.5,texEnd - span / 2.0 ).w);
-	//printf("current obj fetch (%f,%f)\n", texEnd + span / 2.0, yIndex + 0.5);
+	{
+		currentObjectId = nearestInt(tex2D(cudaNormalTex, lineNum + 0.5, texEnd + 1 - span / 2.0).w);
+	}//printf("current obj fetch (%f,%f)\n", texEnd + span / 2.0, yIndex + 0.5);
 	//printf("note mid obj Id:%d\n", currentObjectId);
 	//printf("texBegin,span(%d,%d)\n", texBegin, span);
 	my_printf("currentObjectId,%d,occludedObjId:%d\n", currentObjectId, occludedObjId);
@@ -1396,11 +1426,11 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 	my_printf("beginTex:%f,endTex:%f\n", texBegin + span* enterP, texBegin + span* exitP);
 	for (float tex = (texBegin + span* enterP); 0 <step*(texBegin + span* exitP-tex); tex += step)
 	{
-		//printf("ratioOneD:%f,test tx:%f,currentZ:%f\n", ratioOneD, tex, currentZ);
+		//my_printf("%f,test tx:%f\n", ratioOneD, tex);
 		isInloop = true;
 		//currentPixel = occludedRayState(tex, yIndex, texBegin, span, enterZ, dpdx, enter_projRatio,  color);
 		currentPixel = occludedRayLinarState<isRight>(tex, lineNum, texBegin, span, enterZ, dpdx, enter_projRatio, color);
-		my_printf("current State: isvalid:%d, current state:%d\n",currentPixel.m_isValid, currentPixel.m_state);
+		my_printf("test tx:%f,current State: isvalid:%d, current state:%d\n",tex, currentPixel.m_isValid, currentPixel.m_state);
 		my_printf("lastDepth,currentDepth:%f,%f\n", lastPixel.m_detpth, currentPixel.m_detpth);
 		bool isIntersect = (RAYISUNDER == currentPixel.m_state &&lastPixel.m_state == RAYISUP) || (RAYISUP == currentPixel.m_state &&lastPixel.m_state == RAYISUNDER);
 		my_printf("valid current(%d,last:%d,intersect:%d)\n", currentPixel.m_isValid, lastPixel.m_isValid, isIntersect);
@@ -1790,63 +1820,69 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 			float2 lastTc = make_float2(projStart.x, projStart.y) + interval* lastAlpha;
 			//previewsN 记录的是执行eoc搜索之前的n
 			int previewsN = n;
-			my_printf("here\n");
-			if (isRightEdge(lastTc) && isOccluedeArea<true>(tc))// 如果倒数第二个是在边横沿上，也就是进入遮挡体
-			{
-				int outLineId;
-				int result = intersetctWithW<true>(posW, directionW, interval, tc, lastTc, n, stepN, oc, outLineId);
-				if (result == INTERSECT)
-				{
-					my_printf("addition note intersect\n");
-					my_printf("oc:(%f,%f,%f)\n",oc.x,oc.y,oc.z);
-					return 1;
-				}
-				else //如果到了一重新回到主相机
-				{
-					//通过lineId 的号码来判断n更新n的地方，为该行的一个偏移处，
-					float newN;
-#define GAP 0.01
-					newN = stepN * abs(outLineId + GAP - projStart.y / d_mapScale.y) / (abs(interval.y) / d_mapScale.y);
-					my_printf("new outlineId:%d\n", outLineId);
-					// 新的步数为搜索终点
-					n = max(newN, previewsN);
-					currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
-#undef GAP
-					continue;// 下一步寻找
-				}
-				
-			}
-			else if (isTopEdge(lastTc) && isOccluedeArea<false>(tc))
-			{
-				
-				int outLineId;
-				int result = intersetctWithW<false>(posW, directionW, interval, tc, lastTc, n, stepN, oc, outLineId);
-				if (result == INTERSECT)
-				{
-					my_printf("addition note intersect\n");
-					my_printf("oc:(%f,%f,%f)\n", oc.x, oc.y, oc.z);
-					return 1;
-				}
-				else //如果到了一重新回到主相机
-				{
-					//通过lineId 的号码来判断n更新n的地方，为该行的一个偏移处，
-					float newN;
-#define GAP 0.01
-					newN = stepN * abs(outLineId + GAP - projStart.x / d_mapScale.x) / (abs(interval.x) / d_mapScale.x);
-					my_printf("new outlineId:%d\n", outLineId);
-					// 新的步数为搜索终点
-					n = max(newN, previewsN);
-					currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
-#undef GAP
-					continue;// 下一步寻找
-				}
+			bool right = isRightEdge(lastTc);
+			float2 nonNorTc = lastTc* make_float2(d_imageWidth, d_imageHeight);
+			float2 nonNorTc2 = tc* make_float2(d_imageWidth, d_imageHeight);
 
-			}
-			else if (isTopEdge(lastTc) )
-			{
-				my_printf("top intersection\n");
-				oc = make_float4(1,0,1,0);
-				return 1;
+			//printf("edgetc :(%f,%f):%f\n", nonNorTc.x, nonNorTc.y, tex2D(cudaEdgeTex, nonNorTc.x, nonNorTc.y).y );
+			//printf("edgetc2 :(%f,%f):%f\n", nonNorTc2.x, nonNorTc2.y, tex2D(cudaEdgeTex, nonNorTc2.x, nonNorTc2.y).y);
+
+			bool top = isTopEdge(lastTc);
+			//printf("left top:%d,%d\n", right, top);
+			my_printf("tc:(%f,%f)\n", tc.x * 1024, tc.y * 1024);
+			if (isRightEdge(lastTc) || isTopEdge(lastTc))
+			{ 
+				if (isOccluedeArea<true>(tc))// 如果倒数第二个是在边横沿上，也就是进入遮挡体
+				{
+					int outLineId;
+					int result = intersetctWithW<true>(posW, directionW, interval, tc, lastTc, n, stepN, oc, outLineId);
+					if (result == INTERSECT)
+					{
+						my_printf("addition note intersect\n");
+						my_printf("oc:(%f,%f,%f)\n",oc.x,oc.y,oc.z);
+						return 1;
+					}
+					else //如果到了一重新回到主相机
+					{
+						//通过lineId 的号码来判断n更新n的地方，为该行的一个偏移处，
+						float newN;
+	#define GAP 0.01
+						newN = stepN * abs(outLineId + GAP - projStart.y / d_mapScale.y) / (abs(interval.y) / d_mapScale.y);
+						my_printf("new outlineId:%d\n", outLineId);
+						// 新的步数为搜索终点
+						n = max(newN, previewsN);
+						currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
+	#undef GAP
+						continue;// 下一步寻找
+					}
+				
+				}
+				else if (isOccluedeArea<false>(tc))
+				{
+				
+					int outLineId;
+					int result = intersetctWithW<false>(posW, directionW, interval, tc, lastTc, n, stepN, oc, outLineId);
+					if (result == INTERSECT)
+					{
+						my_printf("addition note intersect\n");
+						my_printf("oc:(%f,%f,%f)\n", oc.x, oc.y, oc.z);
+						return 1;
+					}
+					else //如果到了一重新回到主相机
+					{
+						//通过lineId 的号码来判断n更新n的地方，为该行的一个偏移处，
+						float newN;
+	#define GAP 0.01
+						newN = stepN * abs(outLineId + GAP - projStart.x / d_mapScale.x) / (abs(interval.x) / d_mapScale.x);
+						my_printf("new outlineId:%d\n", outLineId);
+						// 新的步数为搜索终点
+						n = max(newN, previewsN);
+						currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
+	#undef GAP
+						continue;// 下一步寻找
+					}
+
+				}
 			}
 			// 如果倒数第二个是边界而本身不是遮挡体说明从遮挡体出来的光线
 			color.w = 1;
@@ -1868,7 +1904,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 335 || y !=645)
+	if (x != 590 || y !=752)
 	   return;
 #endif
 	//if ( y <100)

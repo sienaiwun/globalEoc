@@ -203,10 +203,10 @@ void Display()
 
 	drawTex(g_Consturctor.getBuffer().getTexture(0), true, nv::vec2f(0.75, 0.5), nv::vec2f(1, 0.75));
 	g_pointRenderFbo.begin();
-	//g_scene->render(g_bufferShader, texManager, &g_navi_Cam);
-	g_renderConstruct.render(g_reconstructShader, &g_navi_Cam);
-	g_renderGbufferConstruct.render(g_reconstructShader, &g_navi_Cam);
-	//g_pointRenderFbo.SaveBMP("real.bmp",0);
+	g_scene->render(g_bufferShader, texManager, &g_navi_Cam);
+	//g_renderConstruct.render(g_reconstructShader, &g_navi_Cam);
+	//g_renderGbufferConstruct.render(g_reconstructShader, &g_navi_Cam);
+	g_pointRenderFbo.SaveBMP("real.bmp",0);
 	g_pointRenderFbo.end();
 	drawTex(g_pointRenderFbo.getTexture(0), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
 	
