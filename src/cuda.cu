@@ -570,7 +570,8 @@ __device__ bool isTopEdge(float2 tc)
 __device__ bool isRightEdge(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
-	return  isEdge<true>(nonNorTc);
+	float2 nonNonTcBut = nonNorTc + make_float2(0, -1);
+	return  isEdge<true>(nonNorTc) || isEdge<true>(nonNonTcBut);
 }
 
 
@@ -1707,7 +1708,7 @@ __device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, 
 		isUp = interval.x > 0;
 		stepLine = abs(interval.x) / d_mapScale.x + 1;
 		modelView = d_modelViewTop;
-		startLineNum = floor(lastTc.x*d_imageWidth) + 0 * (isUp ? -1: 1);
+		startLineNum = floor(tc.x*d_imageWidth) + 0 * (isUp ? -1 : 1);
 		 eocPos = d_eocTopPos;
 	}
 	my_printf("startLineNum:%d,isUp:%d", startLineNum, isUp);
@@ -1866,6 +1867,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 			my_printf("tc:(%f,%f)\n", tc.x * 1024, tc.y * 1024);
 			if (isRightEdge(lastTc) || isTopEdge(lastTc))
 			{ 
+				my_printf("ttt");
 				if (isOccluedeArea<true>(tc))// 如果倒数第二个是在边横沿上，也就是进入遮挡体
 				{
 					int outLineId;
@@ -1949,7 +1951,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 130 || y !=1010)
+	if (x != 689 || y !=708)
 	   return;
 #endif
 	//if ( y <100)
