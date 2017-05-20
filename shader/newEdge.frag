@@ -138,3 +138,69 @@ void main()
 	
 		
 }
+
+/*
+cheat rendering
+
+const vec3 colorS0 = vec3(0,0,0.5);
+	const vec3 colorS1 = vec3(0,128,129)/255.0;
+	const vec3 colorS2 = vec3(129,0,127)/255.0;
+	const vec3 colorS3 = vec3(1,0.5,1);
+	const vec3 colorS4 = vec3(255,128,131)/255.0;
+	const vec3 colorS5 = vec3(102,102,102)/255.0;
+	const vec3 colorS6 = vec3(1,1,1);
+	const vec3 colorS7 = vec3(128,255,255)/255.0;
+	const vec3 colorS8 = vec3(1,0,0);
+	int tilex = int(mod(gl_FragCoord.x,141));
+	int tiley = int(mod(gl_FragCoord.y,141));
+	int xtile = int(tilex/47.0);
+	int ytile = int(tiley/47.0);
+	if(xtile ==0 && ytile ==2)
+	{
+	color0.xyz = colorS0;
+	return;
+	}
+	if(xtile ==1 && ytile ==2)
+	{
+	color0.xyz = colorS1;
+	return;
+	}
+	if(xtile ==2 && ytile ==2)
+	{
+	color0.xyz = colorS2;
+	return;
+	}
+		if(xtile ==0 && ytile ==1)
+	{
+		color0.xyz = colorS3;
+		return;
+	}
+	if(xtile ==1 && ytile ==1)
+	{
+	color0.xyz = colorS4;
+	return;
+	}
+	if(xtile ==2 && ytile ==1)
+	{
+		color0.xyz = colorS5;
+		return;
+	}
+		if(xtile ==0 && ytile ==0)
+	{
+		color0.xyz = colorS6;
+		return;
+	}
+	if(xtile ==1 && ytile ==0)
+	{
+	color0.xyz = colorS7;
+	return;
+	}
+	if(xtile ==2 && ytile ==0)
+	{
+		color0.xyz = colorS8;
+		return;
+	}
+	color0.xyz = vec3(1,0,0);
+	return;
+
+*/

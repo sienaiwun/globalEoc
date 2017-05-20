@@ -4,7 +4,7 @@
 #include "Camera.h"
 #define BEGINOFFSET (1.4f)
 #define ENDOFFSET (370)
-#define PRINTDEBUG
+//#define PRINTDEBUG
 #ifdef PRINTDEBUG
 #define my_printf(...) \
 	printf(__VA_ARGS__)
@@ -30,9 +30,10 @@
 #define OUTOCCLUDED 3
 #define FLT_MAX 99999.9
 		 //求交的宏
-#define RAYISUP 0
+
 #define RAYOUT 1
 #define RAYISUNDER 2
+#define RAYISUP 3
 #define RAYBACKTOMAIN 3
 #define RAYVALID 4
 #define RAYBEGIN 5
@@ -784,10 +785,10 @@ __device__ void FillVolumn(int beginX, int endX, int lineNum, int endUv, int lef
 			int index = i*d_outTopTextureWidth + lineNum;
 			d_cudaTopTexture[index] = make_float4(-dis, realPos.x, realPos.y, realPos.z);
 			int originMappos = (accumIndex - lenght)*d_outTextureWidth + lineNum;
-			if ((accumIndex - lenght) == 786 && lineNum == 338)
+			/*if ((accumIndex - lenght) == 786 && lineNum == 338)
 			{
 				my_printf("orginMapppos:%d,i:%d\n", originMappos, i);
-			}
+			}*/
 			//d_map_buffer[originMappos].y = i;
 			d_map_buffer[originMappos].w = i;
 		}
@@ -1318,7 +1319,7 @@ __device__ float mfracf(float x)
 }
 
 //如果不是一个ID,返回OHTEROBJECT，如果有交点返回INTERSECT，没有交点返回MISSINGNOTE，returnToMainC记录是是否有非冗余值
-template <bool isRight>
+template <bool isRight, bool isFirstRun = true>
 __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraPos, ListNote currentNote, int lineNum, bool isRayUp, int occludedObjId, 
 	float* modelView,// 查询modelView 相机下的深度
 	bool& returnToMainC, EOCPixel &lastPixel, float4& intersectColor, float2& exitTC, float3& exitWorldPos)
@@ -1403,9 +1404,9 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 	rayIntersertectTriangle(posW, normalize(directionW), cameraPos, beforeExitPos, endExitPos, d_modelView, span, &exitReservedPos, &_, f_, exit_projRatiok, _);
 	
 	float2 camera1Entertc = getCameraTc(enterReservedPos, d_modelView, d_proj);
-	my_printf("camera1 entertc:(%f,%f)\n", 1024 * camera1Entertc.x, 1024 * camera1Entertc.y);
+	//my_printf("camera1 entertc:(%f,%f)\n", 1024 * camera1Entertc.x, 1024 * camera1Entertc.y);
 	float2 camera1EXittc = getCameraTc(exitReservedPos, d_modelView, d_proj);
-	my_printf("camera1 exittc:(%f,%f)\n", 1024 * camera1EXittc.x, 1024 * camera1EXittc.y);
+	//my_printf("camera1 exittc:(%f,%f)\n", 1024 * camera1EXittc.x, 1024 * camera1EXittc.y);
 
 	float4 temp = MutiMatrixN(modelView, make_float4(enterReservedPos, 1));
 	float enterZ = -temp.z;
@@ -1414,26 +1415,26 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 	float step = (enter_projRatio > exit_projRatiok) ? -1.0 : 1.0;
 	float enterP = min(1, max(0, enter_projRatio));
 	float exitP = min(1, max(0, exit_projRatiok));
-	my_printf("enter_projRatio:%f,exit_projRatiok:%f\n", enter_projRatio, exit_projRatiok);
+	//my_printf("enter_projRatio:%f,exit_projRatiok:%f\n", enter_projRatio, exit_projRatiok);
 
 	//printf("enterP,enterP(%f,%f)\n", enterP, exitP);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 	float dpdx = (repo(exitZ) - repo(enterZ)) / (exit_projRatiok - enter_projRatio);
 	float4 color;
 	
 	bool isInloop =false;
-	my_printf("enterP:%f,exitP:%f,span:%d\n", enterP, exitP,span);
+	//my_printf("enterP:%f,exitP:%f,span:%d\n", enterP, exitP,span);
 	EOCPixel currentPixel;
-	my_printf("beginTex:%f,endTex:%f\n", texBegin + span* enterP, texBegin + span* exitP);
+	//my_printf("beginTex:%f,endTex:%f\n", texBegin + span* enterP, texBegin + span* exitP);
 	for (float tex = (texBegin + span* enterP); 0 <step*(texBegin + span* exitP-tex); tex += step)
 	{
 		//my_printf("%f,test tx:%f\n", ratioOneD, tex);
 		isInloop = true;
 		//currentPixel = occludedRayState(tex, yIndex, texBegin, span, enterZ, dpdx, enter_projRatio,  color);
 		currentPixel = occludedRayLinarState<isRight>(tex, lineNum, texBegin, span, enterZ, dpdx, enter_projRatio, color);
-		my_printf("test tx:%f,current State: isvalid:%d, current state:%d\n",tex, currentPixel.m_isValid, currentPixel.m_state);
-		my_printf("lastDepth,currentDepth:%f,%f\n", lastPixel.m_detpth, currentPixel.m_detpth);
+		//my_printf("test tx:%f,current State: isvalid:%d, current state:%d\n",tex, currentPixel.m_isValid, currentPixel.m_state);
+		//my_printf("lastDepth,currentDepth:%f,%f\n", lastPixel.m_detpth, currentPixel.m_detpth);
 		bool isIntersect = (RAYISUNDER == currentPixel.m_state &&lastPixel.m_state == RAYISUP) || (RAYISUP == currentPixel.m_state &&lastPixel.m_state == RAYISUNDER);
-		my_printf("valid current(%d,last:%d,intersect:%d)\n", currentPixel.m_isValid, lastPixel.m_isValid, isIntersect);
+		//my_printf("valid current(%d,last:%d,intersect:%d)\n", currentPixel.m_isValid, lastPixel.m_isValid, isIntersect);
 		if ( currentPixel.m_isValid&& lastPixel.m_isValid  && isIntersect)
 		{
 
@@ -1475,7 +1476,7 @@ __device__ int intersectCameraIDW(float3 posW, float3 directionW, float3 cameraP
 
 }
 // 检查在objectId所代表的遮挡物下面的求交结果要么返回NOOBJECTNOTE，没有找到ID一样的要么返回misiing 没焦点,寻找在lineNum对应的区域 有没有交点
-template <bool isRight>
+template <bool isRight, bool isFirstRun = true>
 __device__ int isIntersectLineWithObjectIdW(float3 posW, float3 directionW, float3 cameraPos, int lineNum, bool isRayUp, int occudedObjId,
 	float* modelView, bool& returnTomain, EOCPixel &previousPixel, float3& outPos, float4& resultColor)
 {
@@ -1548,6 +1549,7 @@ __device__ int isIntersectLineWithObjectIdW(float3 posW, float3 directionW, floa
 		my_printf("return MISSINGNOTE\n");
 		return MISSINGNOTE;
 	}
+	previousPixel.m_isValid = false;
 	my_printf("return NOOBJECTNOTE\n");
 	return NOOBJECTNOTE;
 }
@@ -1561,7 +1563,6 @@ __device__ int rayBelowMainTex(float n, int stepN, float2 projStart, float2 inte
 	tc = projStart + interval* n / stepN;
 	float currRayPointZ = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndZ));
 	float currSamplePointZ = colorTextreNorTc(tc).w;
-	//my_printf("tc:(%f,%f),n:%f,stepN:%d,z:(%f,%f)\n", 1024 * tc.x, 1024 * tc.y, n, stepN, currRayPointZ, currSamplePointZ);
 	if (tc.x>(1 - 1.0 / d_imageWidth) || tc.x<(1.0 / d_imageWidth) || tc.y<(1.0 / d_imageHeight) || tc.y>(1.0 - 1.0 / d_imageHeight) || currSamplePointZ > 0)
 	{
 		return 0;
@@ -1644,9 +1645,39 @@ __device__ float3 startPointOfTex(float2 projStart, float2 projEnd, float raySta
 	return make_float3(projStart, rayStartz);
 
 }
-template <bool isRight>
+template <bool isRight, bool isFirstRun = true>
+__device__ bool isContinueSearch(int result, int lineNum)
+{
+	bool continueSearch;
+	if (isFirstRun)
+		continueSearch = (result == MISSINGNOTE);
+	else
+	{
+		if (isRight)
+		{
+			if (lineNum <= 0 || lineNum > d_outTextureWidth)
+				return false;
+		}
+		if (!isRight)
+		{
+			if (lineNum <= 0 || lineNum>d_outTopTextureHeight)
+				return false;
+		}
+		continueSearch = (result == MISSINGNOTE || result == NOOBJECTNOTE);
+	}
+	return continueSearch;
+}
+template <bool isRight,bool isFirstRun = true>
 __device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, float2 tc, float2 lastTc, float &n, int stepN, float4& oc, int& outLineId)
 {
+	if (isRight)
+	{
+		my_printf("!!! right search\n");
+	}
+	else
+	{
+		my_printf("!!! vertical search\n");
+	}
 	//
 	//输出行数为如果第一个行有交点则为开始行数，否则为开始行数+1个偏移
 	float2 d_mapScale = 1.0 / make_float2(d_construct_width, d_construct_height);
@@ -1667,7 +1698,7 @@ __device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, 
 		isUp = interval.y > 0;
 		stepLine = abs(interval.y) / d_mapScale.y + 1;
 		modelView = d_modelViewRight;
-		startLineNum = floor(lastTc.y*d_imageHeight);	// 如果是6.6 行，按第6行搜索 单纯取整
+		startLineNum = floor(tc.y*d_imageHeight) + 0 * (isUp ? -1 : 1);	// 如果是6.6 行，按第6行搜索 单纯取整
 		 eocPos = d_eocPos;
 
 	}
@@ -1676,7 +1707,7 @@ __device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, 
 		isUp = interval.x > 0;
 		stepLine = abs(interval.x) / d_mapScale.x + 1;
 		modelView = d_modelViewTop;
-		startLineNum = floor(lastTc.x*d_imageWidth);
+		startLineNum = floor(lastTc.x*d_imageWidth) + 0 * (isUp ? -1: 1);
 		 eocPos = d_eocTopPos;
 	}
 	my_printf("startLineNum:%d,isUp:%d", startLineNum, isUp);
@@ -1694,16 +1725,18 @@ __device__ int intersetctWithW(float3 posW, float3 directionW, float2 interval, 
 		outLineId = startLineNum + (isUp ? 1 : -1);
 		n += (float)stepN / stepLine;
 	}
+	bool continueSearch = isContinueSearch<isRight,isFirstRun>(result, lineId);
 	my_printf("out line id increase: %d\n", outLineId);
-	while (result == MISSINGNOTE)// 如果这一列中没有求交到MISS,并且没有发生
+	while (continueSearch)// 如果这一列中没有求交到MISS,并且没有发生
 	{
 
 		result = isIntersectLineWithObjectIdW<isRight>(posW, directionW, eocPos, lineId, isUp, objectId, modelView, returntoMain, lastPicel, outPos, oc);
 		lineId = lineId + (isUp ? 1 : -1);
 		n += (float)stepN / stepLine;
 
-		my_printf("out line id increase: %d\n", outLineId);
-		my_printf("result: %d\n", result);
+		//my_printf("out line id increase: %d\n", outLineId);
+		//my_printf("result: %d\n", result);
+		continueSearch = isContinueSearch<isRight, isFirstRun>(result, lineId);
 
 	}
 	return result;
@@ -1805,12 +1838,13 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 	{
 		prevState = currentRayState;
 		currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
+		
 		if (RAYOUT == currentRayState)
 		{
 			my_printf("RAYOUT\n");
 			return false;// 没在相机空间内
 		}
-		if (RAYISUNDER == currentRayState && RAYISUP == prevState)
+		if ((RAYISUNDER == currentRayState) && (RAYISUP == prevState))
 		{
 			
 			color = colorTextreNorTc(tc);
@@ -1842,8 +1876,19 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 						my_printf("oc:(%f,%f,%f)\n",oc.x,oc.y,oc.z);
 						return 1;
 					}
+					
 					else //如果到了一重新回到主相机
 					{
+						n = previewsN;
+						result = intersetctWithW<false,false>(posW, directionW, interval, tc, lastTc, n, stepN, oc, outLineId);
+						if (result == INTERSECT)
+						{
+							my_printf("addition note intersect\n");
+							my_printf("oc:(%f,%f,%f)\n", oc.x, oc.y, oc.z);
+							return 1;
+						}
+						
+						/**/
 						//通过lineId 的号码来判断n更新n的地方，为该行的一个偏移处，
 						float newN;
 	#define GAP 0.01
@@ -1904,7 +1949,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 590 || y !=752)
+	if (x != 130 || y !=1010)
 	   return;
 #endif
 	//if ( y <100)
