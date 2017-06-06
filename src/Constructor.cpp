@@ -17,6 +17,15 @@ void Constructor::init()
 	m_posBlendTex->set(pPosBlendFbo->getTexture(0), m_width, m_height, posBlend_t);
 	m_posBlendTex->init();
 
+
+	m_gbufferGeoResource = new CudaTexResourse();
+	m_gbufferGeoResource->set(m_gbufferGeoTex, m_naviWidth, m_naviHeight, g_buffer_pos_t);
+	m_gbufferGeoResource->init();
+
+	m_gbufferNorResource = new CudaTexResourse();
+	m_gbufferNorResource->set(m_gbufferNorTex, m_naviWidth, m_naviHeight, g_buffer_nor_t);
+	m_gbufferNorResource->init();
+
 }
 void Constructor::render(glslShader & shader, textureManager& manager)
 {
@@ -32,12 +41,18 @@ void Constructor::construct()
 	mapConstruct(m_pNaviCam);
 	m_optixColorResource->map();
 	m_posBlendTex->map();
+	m_gbufferGeoResource->map();
+	m_gbufferNorResource->map();
 	const int eocWidhth = ROWLARGER*m_width;
 	const int eocHeight = ROWLARGER*m_height;
 	edgeRendering(eocWidhth, eocHeight);
 	cuda_Construct(m_width,m_height);
 
+	
+	m_gbufferGeoResource->unmap();
+	m_gbufferNorResource->unmap();
 	m_posBlendTex->unmap();
+
 	m_optixColorResource->unmap();
 	m_constuctResource->unMap();
 	CHECK_ERRORS();

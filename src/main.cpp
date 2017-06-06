@@ -12,6 +12,7 @@
 #include "transparentFixed.h"
 #include "globalEoc.h".
 #include "box.h"
+#include "boxReflected.h"
 #include "showShader.h"
 #include "Constructor.h"
 #include "pointRender.h"
@@ -31,7 +32,7 @@ bool _isNaviCam = true;
 static Constructor g_Consturctor;
 PointRender g_pointRender;
 PointRender g_OptixPointRender;
-Fbo g_pointRenderFbo;
+Fbo g_naviGbuffer;
 RenderConstruct g_renderConstruct;
 RenderConstruct g_renderGbufferConstruct;
 GReconstructShader g_reconstructShader;
@@ -118,7 +119,7 @@ void Init()
 	externWglewInit();
 	//g_render = new OITrender(SCREEN_WIDTH, SCREEN_HEIGHT, 20);
 
-	pEoc = new EOCrender(SCREEN_WIDTH, SCREEN_HEIGHT);
+	pEoc = new EOCrender(SCREEN_WIDTH, SCREEN_HEIGHT);//同时进行初始化
 	pEoc->setOriginCamera(&g_Camera);
 	
 	g_scene = new boxScene();
@@ -142,13 +143,15 @@ void Init()
 	g_OptixPointRender = PointRender(SCREEN_WIDTH, SCREEN_HEIGHT);
 	g_OptixPointRender.init();
 
-	g_pointRenderFbo = Fbo(1, SCREEN_WIDTH, SCREEN_HEIGHT);
-	g_pointRenderFbo.init();
+	g_naviGbuffer = Fbo(3, SCREEN_WIDTH, SCREEN_HEIGHT);
+	g_naviGbuffer.init();
 
 	g_Consturctor = Constructor(pEoc->getWidth(), pEoc->getHeight());
 	g_Consturctor.setNaveCam(&g_navi_Cam);
 	g_Consturctor.setScene(g_scene);
 	g_Consturctor.setOptixColorTex(pEoc->getOptixTex(), pEoc->getOptixWidth(), pEoc->getOptixHeight());
+	g_Consturctor.setGbufferTex(g_naviGbuffer.getTexture(1), g_naviGbuffer.getTexture(2));
+	g_Consturctor.setGbufferSize(g_naviGbuffer.getTexState().getWidth(), g_naviGbuffer.getTexState().getHeight());
 	g_Consturctor.setBlendPosBuffer(&pEoc->getPosBlendFbo());
 	g_Consturctor.init();
 	pEoc->render(texManager);
@@ -184,6 +187,15 @@ void Display()
 		g_navi_Cam.cameraControl();
 	}
 	
+	g_naviGbuffer.begin();
+	g_scene->render(g_bufferShader, texManager, &g_navi_Cam);
+	//g_renderConstruct.render(g_reconstructShader, &g_navi_Cam);
+	//g_renderGbufferConstruct.render(g_reconstructShader, &g_navi_Cam);
+	//g_naviGbuffer.SaveBMP("real.bmp",0);
+	g_naviGbuffer.end();
+	drawTex(g_naviGbuffer.getTexture(0), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
+
+
 	//drawTex(pEoc->getCudaTex(), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.65, 1.0));
 	//drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0-0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));
 //	drawTex(pEoc->getOptixTex(), true, nv::vec2f(0.0, 1.0 - 0.8 / ROWLARGER), nv::vec2f(0.8, 1.0));//
@@ -202,14 +214,7 @@ void Display()
 	g_Consturctor.render(g_bufferShader, texManager);
 
 	drawTex(g_Consturctor.getBuffer().getTexture(0), true, nv::vec2f(0.75, 0.5), nv::vec2f(1, 0.75));
-	g_pointRenderFbo.begin();
-	g_scene->render(g_bufferShader, texManager, &g_navi_Cam);
-	//g_renderConstruct.render(g_reconstructShader, &g_navi_Cam);
-	//g_renderGbufferConstruct.render(g_reconstructShader, &g_navi_Cam);
-	g_pointRenderFbo.SaveBMP("real.bmp",0);
-	g_pointRenderFbo.end();
-	drawTex(g_pointRenderFbo.getTexture(0), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
-	
+
 	//drawTex(pEoc->getRenderFbo()->getTexture(0), true, nv::vec2f(0.0, 0.0), nv::vec2f(0.75, 0.50));
 
 	if (drawFps ) {

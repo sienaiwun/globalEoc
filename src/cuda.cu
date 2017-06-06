@@ -45,6 +45,8 @@ texture<float4, 2, cudaReadModeElementType> cudaPosTex;
 texture<float4, 2, cudaReadModeElementType> cudaNormalTex;
 texture<float4, 2, cudaReadModeElementType> optixColorTex;    //记录的是optix 追踪的eoc图像，w通道记录的是投影深度，原视点相机为负值，负值为正值，我也不知道为啥
 texture<float4, 2, cudaReadModeElementType> posBlendTex;   //记录的是eoc相机空间下的位置图像，w通道记录的是是否是边界
+texture<float4, 2, cudaReadModeElementType> g_bufferPosTex;
+texture<float4, 2, cudaReadModeElementType> g_bufferNorTex;
 cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc(32, 32, 32, 32, cudaChannelFormatKindFloat);
 typedef enum {
 	isVolumn,
@@ -290,13 +292,15 @@ __device__ float linarRatio(float x)
 __device__ float4 colorTextreNorTc(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
+
 	int2 mapTx = nearestTc(nonNorTc);
+
 	int index = mapTx.y * d_outTextureWidth + mapTx.x;
 	int mappedX = (int)(d_map_buffer[index].x + 0.5);
 	int secondIndex = mapTx.y * d_outTextureWidth + mappedX;
-	//my_printf("coord:(%d,%d),secondIndex:%d\n", mappedX, mapTx.y, secondIndex);
+	my_printf("coord:(%d,%d),secondIndex:%d\n", mappedX, mapTx.y, secondIndex);
 	int mappedY = (int)(d_map_buffer[secondIndex].z + 0.5);
-	//my_printf("mapped tc:( mappedX:%d, nonNorTc:%f),z:(%f),mappedY:%d\n", mappedX, nonNorTc.y, tex2D(optixColorTex, nonNorTc.x, nonNorTc.y).z, mappedY);
+	my_printf("mapped tc:( mappedX:%d, nonNorTc:%f),z:(%f),mappedY:%d\n", mappedX, nonNorTc.y, tex2D(optixColorTex, nonNorTc.x, nonNorTc.y).z, mappedY);
 	return tex2D(optixColorTex, mappedX, mappedY);
 }
 __device__ int getNoteIndex(float2 tc)
@@ -712,6 +716,7 @@ __device__ void FillLine(int x)
 	{
 		int index = y*d_outTopTextureWidth + x;
 		d_cudaTopTexture[index] = d_cudaTexture[y*d_outTextureWidth + x];
+		d_map_buffer[index].z = y;
 	}
 }
 __device__ float4 FillPoint(int x, int y)
@@ -822,10 +827,7 @@ __device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int en
 			d_cudaTexture[index] = tex2D(cudaColorTex, uvx, lineNum +0.5);
 			originMappos = lineNum*d_outTextureWidth + accumIndexX;
 			d_map_buffer[originMappos].x = i;
-			if (lineNum == 512)
-			{
-				//printf("render(y,x):%d,%d:(%f,%f)\n", lineNum, i,	 + 0.5, uvx);
-			}
+		
 		}
 		else
 		{
@@ -835,7 +837,7 @@ __device__ void FillSpan(int beginX, int endX, int lineNum, int beginUvI, int en
 			d_map_buffer[originMappos].z = i;
 
 		}
-
+		
 		//printf("write uv(%f,%f)\n",uvx,beginUv.y);
 		//记录映射关系
 		//printf("x:%d,mappedPos:%d\n", x, *accumIndexX);
@@ -1105,6 +1107,17 @@ extern "C"  void cudaRelateTex(CudaTexResourse * pResouce)
 
 		checkCudaErrors(cudaBindTextureToArray(cudaNormalTex, tmpcudaArray, channelDesc));
 		cudaNormalTex.filterMode = cudaFilterModePoint;
+	}
+	else if (g_buffer_pos_t == pResouce->getType())
+	{
+		checkCudaErrors(cudaBindTextureToArray(g_bufferPosTex, tmpcudaArray, channelDesc));
+		g_bufferPosTex.filterMode = cudaFilterModePoint;
+
+	}
+	else if (g_buffer_nor_t == pResouce->getType())
+	{
+		checkCudaErrors(cudaBindTextureToArray(g_bufferNorTex, tmpcudaArray, channelDesc));
+		g_bufferNorTex.filterMode = cudaFilterModePoint;
 	}
 }
 
@@ -1564,6 +1577,7 @@ __device__ int rayBelowMainTex(float n, int stepN, float2 projStart, float2 inte
 	tc = projStart + interval* n / stepN;
 	float currRayPointZ = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndZ));
 	float currSamplePointZ = colorTextreNorTc(tc).w;
+	my_printf("tc (%f,%f) n:%f currentRay:%f,sampleZ:%f\n", tc.x * 1024, tc.y * 1024, n, currRayPointZ, currSamplePointZ);
 	if (tc.x>(1 - 1.0 / d_imageWidth) || tc.x<(1.0 / d_imageWidth) || tc.y<(1.0 / d_imageHeight) || tc.y>(1.0 - 1.0 / d_imageHeight) || currSamplePointZ > 0)
 	{
 		return 0;
@@ -1934,7 +1948,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 			// 如果倒数第二个是边界而本身不是遮挡体说明从遮挡体出来的光线
 			color.w = 1;
 			oc = color;
-			my_printf("main camera intersection found\n");
+			my_printf("main camera intersection found(%f,%f,%f)\n",oc.x,oc.y,oc.z);
 			return 1;
 		}
 	}
@@ -1951,7 +1965,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 689 || y !=708)
+	if (x != 136 || y !=531)
 	   return;
 #endif
 	//if ( y <100)
@@ -1962,10 +1976,17 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
 	float3 beginPoint = getImagePos(tc, d_modeView_inv_construct);
-	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
-	float3 viewDirection = normalize(beginPoint - d_construct_cam_pos);
 
+	
+	float3 viewDirection = normalize(beginPoint - d_construct_cam_pos);
+	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
 	my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
+
+	beginPoint = make_float3(tex2D(g_bufferPosTex, x + 0.5, y + 0.5).x, tex2D(g_bufferPosTex, x + 0.5, y + 0.5).y, tex2D(g_bufferPosTex, x + 0.5, y + 0.5).z);
+	viewDirection = normalize(beginPoint - d_construct_cam_pos);
+	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
+	my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
+	beginPoint = d_construct_cam_pos + viewDirection;
 	float4 outColor;
 	if (intersectTexRay(beginPoint, viewDirection,BEGINOFFSET,ENDOFFSET, outColor))
 	{

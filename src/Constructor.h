@@ -42,6 +42,16 @@ public:
 		m_optixWidth = optixWidth;
 		m_optixHeight = optixHeight;
 	}
+	inline void setGbufferTex(int gbuferGeoTex, int gbufferNorTex)
+	{
+		m_gbufferGeoTex = gbuferGeoTex;
+		m_gbufferNorTex = gbufferNorTex;
+	}
+	inline void setGbufferSize(int x, int y)
+	{
+		m_naviWidth = x;
+		m_naviHeight = y;
+	}
 	inline void setBlendPosBuffer(Fbo * pFbo)
 	{
 		pPosBlendFbo = pFbo;
@@ -49,12 +59,15 @@ public:
 private:
 	Scene* m_pScene;
 	GLuint m_getTex,m_optixColorTex;
+	GLuint m_gbufferGeoTex, m_gbufferNorTex;
 	int m_width, m_height,m_optixWidth,m_optixHeight;
+	int m_naviWidth, m_naviHeight;
 	Fbo m_construct_Fbo;
 	Camera * m_pNaviCam;
 	Fbo * pPosBlendFbo;
 	CudaPboResource * m_constuctResource;
 	CudaTexResourse * m_optixColorResource, *m_posBlendTex;
+	CudaTexResourse * m_gbufferGeoResource, *m_gbufferNorResource;
 
 };
 #endif

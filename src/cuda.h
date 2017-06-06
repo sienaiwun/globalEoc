@@ -34,6 +34,8 @@ enum cudaTexType
 	pos_t,
 	normal_t,
 	posBlend_t,//这个是两个pos 做并集
+	g_buffer_pos_t,
+	g_buffer_nor_t,
 };
 
 
