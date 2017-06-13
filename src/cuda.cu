@@ -292,15 +292,15 @@ __device__ float linarRatio(float x)
 __device__ float4 colorTextreNorTc(float2 tc)
 {
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
-
+	
 	int2 mapTx = nearestTc(nonNorTc);
-
+	//my_printf("nonNorTc:(%f,%f),secondIndex:%d\n", nonNorTc.x, nonNorTc.y, mapTx);
 	int index = mapTx.y * d_outTextureWidth + mapTx.x;
 	int mappedX = (int)(d_map_buffer[index].x + 0.5);
 	int secondIndex = mapTx.y * d_outTextureWidth + mappedX;
-	my_printf("coord:(%d,%d),secondIndex:%d\n", mappedX, mapTx.y, secondIndex);
+	//my_printf("coord:(%d,%d),secondIndex:%d\n", mappedX, mapTx.y, secondIndex);
 	int mappedY = (int)(d_map_buffer[secondIndex].z + 0.5);
-	my_printf("mapped tc:( mappedX:%d, nonNorTc:%f),z:(%f),mappedY:%d\n", mappedX, nonNorTc.y, tex2D(optixColorTex, nonNorTc.x, nonNorTc.y).z, mappedY);
+	//my_printf("mapped tc:( mappedX:%d, nonNorTc:%f),z:(%f),mappedY:%d\n", mappedX, nonNorTc.y, tex2D(optixColorTex, nonNorTc.x, nonNorTc.y).z, mappedY);
 	return tex2D(optixColorTex, mappedX, mappedY);
 }
 __device__ int getNoteIndex(float2 tc)
@@ -548,6 +548,7 @@ __device__ bool isVolumeTop(float2 uv)
 template <bool isRight>
 __device__ bool isEdge(float2 uv)
 {
+
 	if (isRight)
 		return tex2D(cudaEdgeTex, uv.x, uv.y).x > 0.05;
 	else
@@ -576,6 +577,18 @@ __device__ bool isRightEdge(float2 tc)
 	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
 	float2 nonNonTcBut = nonNorTc + make_float2(0, -1);
 	return  isEdge<true>(nonNorTc) || isEdge<true>(nonNonTcBut);
+}
+
+__device__ bool isTopMinusEdge(float2 tc)
+{
+	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
+	return  isMinusEdge<false>(nonNorTc);
+}
+__device__ bool isRightMinusEdge(float2 tc)
+{
+	float2 nonNorTc = tc* make_float2(d_imageWidth, d_imageHeight);
+	float2 nonNonTcBut = nonNorTc + make_float2(0, 1);
+	return  isMinusEdge<true>(nonNorTc) || isMinusEdge<true>(nonNonTcBut);
 }
 
 
@@ -1573,91 +1586,114 @@ __device__ int isIntersectLineWithObjectIdW(float3 posW, float3 directionW, floa
 //坐标都在0-1空间
 __device__ int rayBelowMainTex(float n, int stepN, float2 projStart, float2 interval, float rayStartz, float rayEndZ, float2 &tc)
 {
+	
 	float alpha = n / stepN;
+	tc = projStart + interval* n / stepN;
+	float currRayPointZ = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndZ));
+	my_printf("tc (%f,%f) n:%f currentRay:%f", tc.x * 1024, tc.y * 1024, n, currRayPointZ);
+
+	if (tc.x>(1) || tc.x<(0) || tc.y<(0) || tc.y>(1))
+	{
+		my_printf("\n");
+
+
+		return RAYOUT;
+	}
+	float currSamplePointZ = colorTextreNorTc(tc).w;
+	my_printf("sampleZ:%f\n", currSamplePointZ);
+
+	if (currSamplePointZ > 0)
+		return RAYOUT;
+	// 因为是-值，光线的比图片深度远（大）意味着z要小
+	if (currRayPointZ <= currSamplePointZ)
+		return RAYISUNDER;
+	else
+		return RAYISUP;
+	
+	/*		float alpha = n / stepN;
 	tc = projStart + interval* n / stepN;
 	float currRayPointZ = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndZ));
 	float currSamplePointZ = colorTextreNorTc(tc).w;
 	my_printf("tc (%f,%f) n:%f currentRay:%f,sampleZ:%f\n", tc.x * 1024, tc.y * 1024, n, currRayPointZ, currSamplePointZ);
-	if (tc.x>(1 - 1.0 / d_imageWidth) || tc.x<(1.0 / d_imageWidth) || tc.y<(1.0 / d_imageHeight) || tc.y>(1.0 - 1.0 / d_imageHeight) || currSamplePointZ > 0)
+	if (tc.x>(1 ) || tc.x<(0) || tc.y<(0) || tc.y>(1) || currSamplePointZ > 0)
 	{
-		return 0;
+		return RAYOUT;
 	}
 	// 因为是-值，光线的比图片深度远（大）意味着z要小
 	else if (currRayPointZ <= currSamplePointZ)
 		return RAYISUNDER;
 	else
-		return RAYISUP;
-}
+		return RAYISUP;*/
+		}
+		
+
+//1 - 1.0 / d_imageWidth) || tc.x<(1.0 / d_imageWidth) || tc.y<(1.0 / d_imageHeight) || tc.y>(1.0 - 1.0 / d_imageHeight)
 
 __device__ float3 startPointOfTex(float2 projStart, float2 projEnd, float rayStartz, float rayEndz)
-{
+{ 
+	const float left = 1.0 / d_imageWidth;
+	const float right = 1 - 1.0 / d_imageWidth;
+	const float top = 1.0 - 1.0 / d_imageHeight;
+	const float bot = 1.0 / d_imageHeight;
+	const float wdelta = 1.0 / d_imageWidth/4;
+	const float hdelta = 1.0 / d_imageHeight / 4;
 	float2 wtx = projEnd - projStart;
 	float alpha = 0;
-	if (projStart.x<0)
+	if (projStart.x <left)
 	{
-		alpha = (0.00000 - projStart.x) / (projEnd.x - projStart.x);
-		projStart.y = projStart.y + (0.00000 - projStart.x)*wtx.y / wtx.x;
-		projStart.x = 0.00000;
+		alpha = (left+wdelta - projStart.x) / (projEnd.x - projStart.x);
 	}
-	else if (projStart.x>1)
+	else if (projStart.x>right)
 	{
-		alpha = (1.0f - projStart.x) / (projEnd.x - projStart.x);
-		projStart.y = projStart.y + (1.0f - projStart.x)*wtx.y / wtx.x;
-		projStart.x = 1.0f;
+		alpha = (right-wdelta - projStart.x) / (projEnd.x - projStart.x);
+		
 
 	}
-	else if (projStart.y>1)
+	else if (projStart.y>top)
 	{
-		alpha = (1.0f - projStart.y) / (projEnd.y - projStart.y);
+		alpha = (top-hdelta - projStart.y) / (projEnd.y - projStart.y);
 
-		projStart.x = projStart.x + (1.0f - projStart.y)*wtx.x / wtx.y;
-		projStart.y = 1.0f;
 
 	}
-	else if (projStart.y<0)
+	else if (projStart.y<bot)
 	{
-		alpha = (0.0f - projStart.y) / (projEnd.y - projStart.y);
-
-		projStart.x = projStart.x + (0.00000 - projStart.y)*wtx.x / wtx.y;
-		projStart.y = 0.00000;
+		alpha = (bot+hdelta - projStart.y) / (projEnd.y - projStart.y);
 
 	}
+	projStart = projStart + alpha *(projEnd - projStart);
 	rayStartz = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndz));
+	my_printf("projstart:%f,%f\n", projStart.x, projStart.y);
 	alpha = 0;
-	if (projStart.x<0)
+	if (projStart.x<left)
 	{
-		alpha = (0.00000 - projStart.x) / (projEnd.x - projStart.x);
+		alpha = (left - projStart.x) / (projEnd.x - projStart.x);
 
-		projStart.y = projStart.y + (0.00000 - projStart.x)*wtx.y / wtx.x;
-		projStart.x = 0.00000;
+		
+	}
+	else if (projStart.x>right)
+	{
+		alpha = (right - projStart.x) / (projEnd.x - projStart.x);
+	
 
 	}
-	else if (projStart.x>1)
+	else if (projStart.y>top)
 	{
-		alpha = (1.0f - projStart.x) / (projEnd.x - projStart.x);
-		projStart.y = projStart.y + (1.0f - projStart.x)*wtx.y / wtx.x;
-		projStart.x = 1.0f;
+		alpha = (top - projStart.y) / (projEnd.y - projStart.y);
 
 	}
-	else if (projStart.y>1)
+	else if (projStart.y<bot)
 	{
-		alpha = (1.0f - projStart.y) / (projEnd.y - projStart.y);
+		alpha = (bot - projStart.y) / (projEnd.y - projStart.y);
 
-		projStart.x = projStart.x + (1.0f - projStart.y)*wtx.x / wtx.y;
-		projStart.y = 1.0f;
+	
 
 	}
-	else if (projStart.y<0)
-	{
-		alpha = (0.0f - projStart.y) / (projEnd.y - projStart.y);
-
-		projStart.x = projStart.x + (0.00000 - projStart.y)*wtx.x / wtx.y;
-		projStart.y = 0.00000;
-
-	}
-	rayStartz = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndz));
-
+	my_printf("projstart:%f,%f\n", projStart.x, projStart.y);
+	projStart = projStart + alpha *(projEnd - projStart);
+	rayStartz = 1 / ((1 - alpha)*(1 / rayStartz) + (alpha)*(1 / rayEndz)); 
 	return make_float3(projStart, rayStartz);
+	
+
 
 }
 template <bool isRight, bool isFirstRun = true>
@@ -1800,6 +1836,12 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 		float step = -posW3.z / RE.z;
 		rayEnd = posW3 + RE*(step - 1);
 	}
+	
+	if (rayStart.z > 0)
+	{
+		float step = -posW3.z / RE.z;
+		rayStart = posW3 + RE*(step + 1);
+	}
 	temp = MutiMatrixN(d_proj, make_float4(rayStart, 1));
 
 	float3 projStart = toFloat3(temp);
@@ -1816,7 +1858,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 	projStart.y = shiftValue.y;
 	rayStart.z = shiftValue.z;
 
-	//printf("projStart(%f,%f),projEnd(%f,%f)\n", (projStart.x) * 1024, (projStart.y) * 1024, projEnd.x * 1024, projEnd.y * 1024);
+	my_printf("projStart(%f,%f),projEnd(%f,%f)\n", (projStart.x) * 1024, (projStart.y) * 1024, projEnd.x * 1024, projEnd.y * 1024);
 
 
 	//oc = make_float4(projStart.x,projStart.y,projStart.z,0.7);	
@@ -1835,6 +1877,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 	float n = 0;
 	float2 tc;
 	bool isNotValid = true;
+	
 
 
 	//printf("interval*1024(%f,%f)\n", (interval.x) * 1024, (interval.y) * 1024);
@@ -1842,6 +1885,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 	int prevState, currentRayState = rayBelowMainTex(n, stepN, make_float2(projStart.x, projStart.y), interval, rayStart.z, rayEnd.z, tc);
 	if (RAYOUT == currentRayState)
 	{
+		my_printf("RAYOUT");
 		return false;// 没在相机空间内
 	}
 	if (stepN<2)
@@ -1849,6 +1893,8 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 		oc = colorTextreNorTc(make_float2(projStart.x, projStart.y) + interval / 2);
 		return 1;
 	}
+	
+
 	for (; n <= stepN; n += 1)
 	{
 		prevState = currentRayState;
@@ -1877,7 +1923,7 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 			//printf("edgetc2 :(%f,%f):%f\n", nonNorTc2.x, nonNorTc2.y, tex2D(cudaEdgeTex, nonNorTc2.x, nonNorTc2.y).y);
 
 			bool top = isTopEdge(lastTc);
-			//printf("left top:%d,%d\n", right, top);
+			my_printf("left top:%d,%d\n", right, top);
 			my_printf("tc:(%f,%f)\n", tc.x * 1024, tc.y * 1024);
 			if (isRightEdge(lastTc) || isTopEdge(lastTc))
 			{ 
@@ -1945,6 +1991,13 @@ __device__ int intersectTexRay(float3 posW, float3 directionW, float beginOffset
 
 				}
 			}
+			else if (isRightMinusEdge(lastTc) || isTopMinusEdge(lastTc))
+			{
+				my_printf("last minus\n");
+
+				continue;
+
+			}
 			// 如果倒数第二个是边界而本身不是遮挡体说明从遮挡体出来的光线
 			color.w = 1;
 			oc = color;
@@ -1965,28 +2018,50 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	if (x >= kernelWidth || y >= kernelHeight)
 		return;
 #ifdef PRINTDEBUG
-	if (x != 136 || y !=531)
+	if (x != 243 || y !=388)
 	   return;
 #endif
-	//if ( y <100)
-	//	return;
+	/*
+	if (y != 1023 )
+		return;
+	if (x != 6)
+		return;
+	*/
 	//if ( y >= 470||x>=414)
 	//	return;
 	//printf("test:x%d,y:%d\n", x, y);
+	
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
+	/*
 	float3 beginPoint = getImagePos(tc, d_modeView_inv_construct);
-
-	
 	float3 viewDirection = normalize(beginPoint - d_construct_cam_pos);
 	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
 	my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
-
 	beginPoint = make_float3(tex2D(g_bufferPosTex, x + 0.5, y + 0.5).x, tex2D(g_bufferPosTex, x + 0.5, y + 0.5).y, tex2D(g_bufferPosTex, x + 0.5, y + 0.5).z);
 	viewDirection = normalize(beginPoint - d_construct_cam_pos);
 	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
 	my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
 	beginPoint = d_construct_cam_pos + viewDirection;
+	*/
+	
+	
+	float4 posTemp = tex2D(g_bufferPosTex, x + 0.5, y + 0.5);
+	float3 beginPoint = make_float3(posTemp.x, posTemp.y, posTemp.z);
+	posTemp = tex2D(g_bufferNorTex, x + 0.5, y + 0.5);
+	float3 N = make_float3(posTemp.x, posTemp.y, posTemp.z);
+	if (length(beginPoint) < 0.01)
+		return;
+	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
+	my_printf("N:(%f,%f,%f)\n", N.x, N.y, N.z);
+
+	float3 L = normalize(beginPoint - d_construct_cam_pos);
+	float3 RL = normalize(reflect(L, N));
+	float3 viewDirection = RL;
+	beginPoint = beginPoint + viewDirection;
+	
+	
+	
 	float4 outColor;
 	if (intersectTexRay(beginPoint, viewDirection,BEGINOFFSET,ENDOFFSET, outColor))
 	{
@@ -1997,6 +2072,7 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	{
 		d_cuda_construct_texture[index] = make_float4(0, 0, 0, 1);//tex2D(cudaColorTex, x, y);
 	}
+	
 }
 void construct_cudaInit()
 {

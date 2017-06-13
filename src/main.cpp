@@ -122,7 +122,7 @@ void Init()
 	pEoc = new EOCrender(SCREEN_WIDTH, SCREEN_HEIGHT);//同时进行初始化
 	pEoc->setOriginCamera(&g_Camera);
 	
-	g_scene = new boxScene();
+	g_scene = new boxReflectedScene();
 	g_scene->LoadCamera(&g_Camera);
 	g_scene->LoadNaviCam(&g_navi_Cam);
 

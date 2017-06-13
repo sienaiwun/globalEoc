@@ -85,7 +85,7 @@ void RowCounter::render(Camera *pCamera, Camera * pEocCam, Camera * pTopCamera)
 {
 	m_OutTex->map();
 	m_initArray->map();
-	m_initTopArray->map();
+	m_initTopArray->map(); 
 	m_occluderRightCudaTex->map();
 	m_occluderTopCudaTex->map();
 	m_edgeCudaTex->map();

@@ -145,7 +145,7 @@ void CudaPboResource::generateTex()
 			Fbo::SaveBMP("b.bmp", pTexture, m_width, m_height);
 
 
-			glBindTexture(GL_TEXTURE_2D, 0);
+ 			glBindTexture(GL_TEXTURE_2D, 0);
 			
 		}
 		

@@ -401,7 +401,7 @@ void Camera::Look()
 	m_modelView = nv::matrix4f::lookAt(nv::vec3f(m_vPosition.x, m_vPosition.y, m_vPosition.z),
 		nv::vec3f(m_vView.x, m_vView.y, m_vView.z),
 		nv::vec3f(m_vUpVector.x, m_vUpVector.y, m_vUpVector.z));
-	m_projMat = nv::matrix4f::frustum(m_framebbmin.x, m_framebbmax.x, m_framebbmin.y, m_framebbmax.y, 1, 1000);
+	m_projMat = nv::matrix4f::frustum(m_framebbmin.x, m_framebbmax.x, m_framebbmin.y, m_framebbmax.y, 1, FAR_PLANE_DIS);
 	m_mvpMat = m_projMat * m_modelView;
 
 	m_deepD = normalize(nv::vec3f(m_vView.x, m_vView.y, m_vView.z) - nv::vec3f(m_vPosition.x, m_vPosition.y, m_vPosition.z));
