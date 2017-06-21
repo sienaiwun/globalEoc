@@ -27,11 +27,15 @@
 using namespace optix;
 
 rtTextureSampler<float4, 2>  request_texture;
+rtTextureSampler<float4, 2>  pos_texture;
+rtTextureSampler<float4, 2>  normal_texture;
 
 rtBuffer<float4, 2>          result_buffer;
 rtBuffer<float4, 2>          position_buffer;
 
+rtBuffer<float4, 2>          construct_buffer;
 rtDeclareVariable(uint, shadow_ray_type, , );
+rtDeclareVariable(uint, reflected_ray_type, , );
 rtDeclareVariable(float, scene_epsilon, , );
 rtDeclareVariable(uint2, launch_index, rtLaunchIndex, );
 rtDeclareVariable(float3, light_pos, , );
@@ -43,7 +47,7 @@ rtDeclareVariable(float3, rightND, , );
 rtDeclareVariable(float3, topND, , );
 rtDeclareVariable(optix::Matrix4x4, optixModeView_Inv, , );
 rtDeclareVariable(float2, resolution, , );
-
+rtDeclareVariable(float2, construct_res, , );
 rtDeclareVariable(optix::Matrix4x4, rightModelView, , );
 rtDeclareVariable(optix::Matrix4x4, topModelView, , );
 rtDeclareVariable(optix::Matrix4x4, optixModelView, , );
@@ -147,4 +151,21 @@ RT_PROGRAM void shadow_request()
 
 RT_PROGRAM void exception()
 {
+}
+RT_PROGRAM void reflection_request()
+{
+	
+	PerRayData_shadow prd;
+
+	float2 tc = make_float2(launch_index.x, launch_index.y) / construct_res;
+	float4 temp = tex2D(pos_texture, launch_index.x + 0.5, launch_index.y + 0.5);// texture x 通道存储的是前后面的dis信息
+	float3 pos = make_float3(temp.x, temp.y, temp.z);
+	temp = tex2D(normal_texture, launch_index.x + 0.5, launch_index.y + 0.5);// texture x 通道存储的是前后面的dis信息
+	float3 normal = make_float3(temp.x, temp.y, temp.z);
+	float3 I = normalize(pos - eye_pos);
+	float3 reflectedD = reflect(I, normal);
+	optix::Ray ray = optix::make_Ray(pos, reflectedD, reflected_ray_type, 1.0f, 99999.9);
+	rtTrace(reflectors, ray, prd);
+	construct_buffer[launch_index] = make_float4(prd.attenuation, 1);
+	
 }

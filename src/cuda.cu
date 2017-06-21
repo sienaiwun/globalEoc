@@ -2,9 +2,11 @@
 #include <helper_math.h>
 #include <nvMatrix.h>
 #include "Camera.h"
+#include "macro.h"
 #define BEGINOFFSET (1.4f)
 #define ENDOFFSET (370)
 //#define PRINTDEBUG
+
 #ifdef PRINTDEBUG
 #define my_printf(...) \
 	printf(__VA_ARGS__)
@@ -55,6 +57,7 @@ typedef enum {
 
 
 
+
 uint3 *cuda_PBO_Buffer;
 uint3 *cuda_PBO_Top_Buffer;
 
@@ -78,6 +81,7 @@ float* modelView, *modelView_inv,*modelView_construct_inv;
 __device__ float* d_modelView,*d_modelView_inv;
 float* proj,*proj_inv;
 __device__ float* d_proj, *d_proj_inv;
+ 
 
 
 float* modelViewRight;
@@ -94,6 +98,7 @@ __device__ float* d_project_construct;
 __device__ float3 d_construct_cam_pos;
 __device__ float* d_modeView_inv_construct;
 __device__ float2 d_bbmin, d_bbmax;
+__device__ Ray_type d_ray_type;
 
 
 __device__ float4* d_cuda_construct_texture;
@@ -947,6 +952,10 @@ int atomBufferTop = 1;
 #ifdef DEBUG
 ListNote *host_data = NULL;
 #endif
+extern void constructInit(Ray_type ray_type)
+{
+	checkCudaErrors(cudaMemcpyToSymbol(d_ray_type, &ray_type, sizeof(int)));
+}
 extern void cudaInit(int height, int width, int k, float rowLarger)
 {
 	checkCudaErrors(cudaMalloc(&device_data, height*k*sizeof(ListNote)));
@@ -2033,34 +2042,37 @@ __global__ void construct_kernel(int kernelWidth, int kernelHeight)
 	
 	const int index = y*kernelWidth + x;
 	float2 tc = make_float2(x + 0.5, y + 0.5) / make_float2(kernelWidth, kernelHeight);
-	/*
-	float3 beginPoint = getImagePos(tc, d_modeView_inv_construct);
-	float3 viewDirection = normalize(beginPoint - d_construct_cam_pos);
-	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
-	my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
-	beginPoint = make_float3(tex2D(g_bufferPosTex, x + 0.5, y + 0.5).x, tex2D(g_bufferPosTex, x + 0.5, y + 0.5).y, tex2D(g_bufferPosTex, x + 0.5, y + 0.5).z);
-	viewDirection = normalize(beginPoint - d_construct_cam_pos);
-	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
-	my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
-	beginPoint = d_construct_cam_pos + viewDirection;
-	*/
+	float3 beginPoint, viewDirection;
+	if (d_ray_type == primary_ray_e)
+	{
+		beginPoint = getImagePos(tc, d_modeView_inv_construct);
+		viewDirection = normalize(beginPoint - d_construct_cam_pos);
+		my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
+		my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
+		beginPoint = make_float3(tex2D(g_bufferPosTex, x + 0.5, y + 0.5).x, tex2D(g_bufferPosTex, x + 0.5, y + 0.5).y, tex2D(g_bufferPosTex, x + 0.5, y + 0.5).z);
+		viewDirection = normalize(beginPoint - d_construct_cam_pos);
+		my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
+		my_printf("viewDirection:(%f,%f,%f)\n", viewDirection.x, viewDirection.y, viewDirection.z);
+		beginPoint = d_construct_cam_pos + viewDirection;
+	}
+	else if (d_ray_type == reflected_ray_e)
+	{
 	
-	
-	float4 posTemp = tex2D(g_bufferPosTex, x + 0.5, y + 0.5);
-	float3 beginPoint = make_float3(posTemp.x, posTemp.y, posTemp.z);
-	posTemp = tex2D(g_bufferNorTex, x + 0.5, y + 0.5);
-	float3 N = make_float3(posTemp.x, posTemp.y, posTemp.z);
-	if (length(beginPoint) < 0.01)
-		return;
-	my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
-	my_printf("N:(%f,%f,%f)\n", N.x, N.y, N.z);
+		float4 posTemp = tex2D(g_bufferPosTex, x + 0.5, y + 0.5);
+		beginPoint = make_float3(posTemp.x, posTemp.y, posTemp.z);
+		posTemp = tex2D(g_bufferNorTex, x + 0.5, y + 0.5);
+		float3 N = make_float3(posTemp.x, posTemp.y, posTemp.z);
+		if (length(beginPoint) < 0.01)
+			return;
+		my_printf("beginPoint:(%f,%f,%f)\n", beginPoint.x, beginPoint.y, beginPoint.z);
+		my_printf("N:(%f,%f,%f)\n", N.x, N.y, N.z);
 
-	float3 L = normalize(beginPoint - d_construct_cam_pos);
-	float3 RL = normalize(reflect(L, N));
-	float3 viewDirection = RL;
-	beginPoint = beginPoint + viewDirection;
+		float3 L = normalize(beginPoint - d_construct_cam_pos);
+		float3 RL = normalize(reflect(L, N));
+		viewDirection = RL;
+		beginPoint = beginPoint + viewDirection;
 	
-	
+	}
 	
 	float4 outColor;
 	if (intersectTexRay(beginPoint, viewDirection,BEGINOFFSET,ENDOFFSET, outColor))

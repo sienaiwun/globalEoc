@@ -13,6 +13,7 @@ public:
 		m_cameraFile = "./model/urban/box.txt";
 		//m_naviFile = "./model/urban/boxnaviOneWayOk.txt";
 		m_naviFile = "./model/urban/boxnaviTopHalfRight.txt";
+		m_ray_type = primary_ray_e;
 		init();
 	};
 };

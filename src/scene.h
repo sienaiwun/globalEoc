@@ -61,6 +61,10 @@ public:
 	{
 		return m_naviFile;
 	}
+	Ray_type getRayType()
+	{
+		return m_ray_type;
+	}
 
 	
 protected:
@@ -70,6 +74,8 @@ protected:
 	nv::vec3f m_lightPos;
 	std::string m_cameraFile;
 	std::string m_naviFile;
+	Ray_type m_ray_type ;
+private:
 #ifdef OPTIX
 public:
 	inline void setOptix(optix::Context * p)

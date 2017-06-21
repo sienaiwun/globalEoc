@@ -162,6 +162,10 @@ public:
 	{
 		return m_optixWorldTex;
 	}
+    (optix::Context*) getOptixContex()
+	{
+		return &m_rtContext;
+	}
 	void EOCEdgeRender();
 private:
 	optix::Context        m_rtContext;

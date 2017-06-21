@@ -15,4 +15,14 @@
 	#define DIFFUSEPATH "./output/diffuse.ptx"
 	#define TEXTUREPATH "./output/textureobj.ptx"
 	#define TRIAGNELPATH  "./output/triangleMesh.ptx"
+	#define CONSTRUCTPATH   "./output/constructKernel.ptx"
+#endif
+
+#ifndef MACRO_H
+#define MACRO_H
+typedef enum  Ray_type
+{
+	primary_ray_e,
+	reflected_ray_e,
+} Ray_type;
 #endif

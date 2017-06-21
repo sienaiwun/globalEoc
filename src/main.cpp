@@ -154,11 +154,23 @@ void Init()
 	g_Consturctor.setGbufferSize(g_naviGbuffer.getTexState().getWidth(), g_naviGbuffer.getTexState().getHeight());
 	g_Consturctor.setBlendPosBuffer(&pEoc->getPosBlendFbo());
 	g_Consturctor.init();
+
+	
+#ifdef OPTIX
+	g_Consturctor.setOptixContex(pEoc->getOptixContex());
+	g_Consturctor.optixInit();
+	(*pEoc->getOptixContex())->setStackSize(2048);
+	(*pEoc->getOptixContex())->validate();
+
+	
+#endif
 	pEoc->render(texManager);
 
 	g_reconstructShader.init();
 	g_renderConstruct = RenderConstruct(pEoc->getOptixTex(), pEoc->getOptixWorldTex());
 	g_renderConstruct.setSize(pEoc->getOptixWidth(), pEoc->getOptixHeight());
+
+	
 	/*
 	g_renderConstruct.setConstructCam(pEoc->getRightEocCamera()->getEocCameraP());
 	g_renderConstruct.build();
@@ -207,11 +219,10 @@ void Display()
 	drawTex(pEoc->getGbufferP()->getTexture(0), true, nv::vec2f(0.75, 0.75));
 	g_Consturctor.construct();
 	drawTex(g_Consturctor.getReconstructTexture(), true, nv::vec2f(0., 0.6), nv::vec2f(0.4, 1.0));
-	g_Consturctor.render(g_bufferShader, texManager);
+	g_Consturctor.render(g_bufferShader, texManager);// 这是做对比的方法
 	CHECK_ERRORS();
 	
 	
-	g_Consturctor.render(g_bufferShader, texManager);
 
 	drawTex(g_Consturctor.getBuffer().getTexture(0), true, nv::vec2f(0.75, 0.5), nv::vec2f(1, 0.75));
 

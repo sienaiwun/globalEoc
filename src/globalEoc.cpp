@@ -151,8 +151,8 @@ void EOCrender::initOptix()
 	try
 	{
 		m_rtContext = optix::Context::create();
-		m_rtContext->setRayTypeCount(1);
-		m_rtContext->setEntryPointCount(1);
+		m_rtContext->setRayTypeCount(2);
+		m_rtContext->setEntryPointCount(2);
 		m_rtContext["shadow_ray_type"]->setUint(0u);
 		m_rtContext["scene_epsilon"]->setFloat(1e-4f);
 		m_rtContext["resolution"]->setFloat(m_cudaTexWidth, m_cudaTexHeight);
@@ -192,8 +192,8 @@ void EOCrender::initOptix()
 		myGeometry::p_rtContext = &m_rtContext;
 		m_pScene->setOptix(&m_rtContext);
 		m_pScene->optixInit();
-		m_rtContext->setStackSize(2048);
-		m_rtContext->validate();
+		//m_rtContext->setStackSize(2048);
+		//m_rtContext->validate();
 	}
 	catch (optix::Exception& e)
 	{

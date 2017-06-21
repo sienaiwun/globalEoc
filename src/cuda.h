@@ -5,6 +5,7 @@
 #include <helper_cuda.h>
 #include <assert.h>
 #include <cuda_gl_interop.h>
+#include "macro.h"
 //#include <cutil_gl_inline.h>
 #include <helper_cuda_gl.h>
 //#include <cutil_math.h>
@@ -172,6 +173,6 @@ extern "C" void cudaRelateArray(CudaPboResource * pResouce);
 extern "C" void pboRefresh(CudaPboResource * pResource);
 extern "C" void countRow(int width, int height, Camera * pCamera, Camera * pEoc, Camera * pEocTopCamera);
 extern void cudaInit(int height,int width, int k,float rowLarger);
- 
+
 
 #endif

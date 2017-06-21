@@ -36,6 +36,7 @@ public:
 	}
 	void render(glslShader & shader, textureManager& manager);
 	void construct();
+	void optixInit();
 	inline void setOptixColorTex(int optixColorTex, int optixWidth, int optixHeight)
 	{
 		m_optixColorTex = optixColorTex;
@@ -56,7 +57,12 @@ public:
 	{
 		pPosBlendFbo = pFbo;
 	}
+	inline void setOptixContex(optix::Context* p)
+	{
+		m_pOptixContex = p;
+	}
 private:
+	optix::Context* m_pOptixContex;
 	Scene* m_pScene;
 	GLuint m_getTex,m_optixColorTex;
 	GLuint m_gbufferGeoTex, m_gbufferNorTex;
@@ -68,6 +74,11 @@ private:
 	CudaPboResource * m_constuctResource;
 	CudaTexResourse * m_optixColorResource, *m_posBlendTex;
 	CudaTexResourse * m_gbufferGeoResource, *m_gbufferNorResource;
+	optix::TextureSampler m_rtTexture,m_normalTexture;
+	optix::Buffer         m_rtresultBuffer;
+
+	GLuint m_resultTex;
+	GLuint m_resultPbo;
 
 };
 #endif
